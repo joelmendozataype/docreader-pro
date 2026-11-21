@@ -32,3 +32,16 @@ export interface ParsedDocument {
 }
 
 export const ACCEPTED_EXTENSIONS = ['.pdf', '.docx', '.doc', '.html', '.htm'] as const;
+
+/**
+ * Datos ligeros de un documento para la biblioteca (sin texto ni HTML),
+ * para que listar cientos de documentos grandes sea rápido.
+ */
+export interface DocumentMeta extends Omit<ParsedDocument, 'text' | 'html' | 'sections'> {
+  sectionCount: number;
+  wordCount: number;
+  updatedAt: number;
+  lastOpenedAt?: number;
+  /** progreso de lectura 0..1 (lo actualiza el lector en la Fase 5) */
+  progress?: number;
+}

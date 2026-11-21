@@ -24,7 +24,13 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       suppressHydrationWarning
     >
       <body className="antialiased">
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+        <ThemeProvider
+          attribute="class"
+          themes={['light', 'dark', 'sepia']}
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
           <TooltipProvider>{children}</TooltipProvider>
           <Toaster richColors position="bottom-right" />
         </ThemeProvider>

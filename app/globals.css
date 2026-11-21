@@ -129,3 +129,133 @@
     @apply font-sans;
   }
 }
+
+/* ───────────── Tema sepia (lectura) ─────────────
+   Contrastes verificados ≥ 4.5:1 (texto) sobre el fondo crema. */
+.sepia {
+  --background: #f5ecd9;
+  --foreground: #43352a;
+  --card: #f9f2e3;
+  --card-foreground: #43352a;
+  --popover: #faf4e6;
+  --popover-foreground: #43352a;
+  --primary: #7a4b26;
+  --primary-foreground: #fdf8ee;
+  --secondary: #ebdfc6;
+  --secondary-foreground: #43352a;
+  --muted: #ebdfc6;
+  --muted-foreground: #6b5643;
+  --accent: #e6d7ba;
+  --accent-foreground: #43352a;
+  --destructive: oklch(0.52 0.2 27);
+  --border: #dccdb0;
+  --input: #d3c19f;
+  --ring: #a07850;
+  color-scheme: light;
+}
+
+/* ───────────── Contenido del lector ───────────── */
+@layer components {
+  .reader-content {
+    font-size: var(--reader-font-size, 19px);
+    line-height: var(--reader-line-height, 1.75);
+    overflow-wrap: break-word;
+    hyphens: auto;
+    text-rendering: optimizeLegibility;
+  }
+  .reader-content > :first-child {
+    margin-top: 0;
+  }
+  .reader-content :is(h1, h2, h3, h4, h5, h6) {
+    font-weight: 700;
+    line-height: 1.25;
+    scroll-margin-top: 5.5rem;
+    text-wrap: balance;
+    hyphens: manual;
+  }
+  .reader-content h1 {
+    font-size: 1.85em;
+    margin: 1.6em 0 0.6em;
+  }
+  .reader-content h2 {
+    font-size: 1.45em;
+    margin: 1.5em 0 0.55em;
+  }
+  .reader-content h3 {
+    font-size: 1.2em;
+    margin: 1.3em 0 0.5em;
+  }
+  .reader-content :is(h4, h5, h6) {
+    font-size: 1.05em;
+    margin: 1.2em 0 0.4em;
+  }
+  .reader-content :is(h1, h2, h3, h4, h5, h6)[tabindex='-1']:focus {
+    outline: none;
+  }
+  .reader-content p {
+    margin: 0 0 1em;
+  }
+  .reader-content a {
+    color: var(--primary);
+    text-decoration: underline;
+    text-underline-offset: 0.18em;
+  }
+  .reader-content :is(ul, ol) {
+    margin: 0 0 1em;
+    padding-left: 1.6em;
+  }
+  .reader-content ul {
+    list-style: disc;
+  }
+  .reader-content ol {
+    list-style: decimal;
+  }
+  .reader-content li + li {
+    margin-top: 0.3em;
+  }
+  .reader-content blockquote {
+    margin: 1.2em 0;
+    padding-left: 1em;
+    border-left: 3px solid var(--border);
+    color: var(--muted-foreground);
+    font-style: italic;
+  }
+  .reader-content :is(pre, code) {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+  }
+  .reader-content pre {
+    overflow-x: auto;
+    padding: 1em;
+    border-radius: var(--radius);
+    background: var(--muted);
+  }
+  .reader-content table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    border-collapse: collapse;
+    margin: 1.2em 0;
+    font-size: 0.9em;
+  }
+  .reader-content :is(th, td) {
+    border: 1px solid var(--border);
+    padding: 0.4em 0.6em;
+    text-align: left;
+    vertical-align: top;
+  }
+  .reader-content img {
+    max-width: 100%;
+    height: auto;
+    border-radius: calc(var(--radius) * 0.6);
+  }
+  .reader-content hr {
+    margin: 2em 0;
+    border-color: var(--border);
+  }
+  /* documentos enormes: el navegador solo pinta lo visible */
+  .reader-content[data-large] > * {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 3em;
+  }
+}

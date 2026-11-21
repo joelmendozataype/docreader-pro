@@ -155,3 +155,20 @@ describe('GET /api/upload', () => {
     });
   });
 });
+
+describe('POST /api/upload — integración adicional', () => {
+  it('atiende varias subidas en paralelo sin mezclar resultados', async () => {
+    const names = ['programacion.pdf', 'informe.docx', 'historia.doc', 'celula.html'];
+    const responses = await Promise.all(names.map((n) => POST(uploadRequest(blobOf(n), n))));
+    const bodies = await Promise.all(responses.map((r) => r.json()));
+    expect(responses.every((r) => r.status === 200)).toBe(true);
+    expect(bodies.map((b) => b.data.fileName)).toEqual(names);
+    expect(new Set(bodies.map((b) => b.data.id)).size).toBe(4);
+  });
+
+  it('no se fía del MIME declarado por el navegador', async () => {
+    // un PDF enviado como text/html y con extensión .html se procesa como PDF
+    const res = await POST(uploadRequest(blobOf('programacion.pdf', 'text/html'), 'pagina.html'));
+    expect((await res.json()).data.fileType).toBe('pdf');
+  });
+});

@@ -1,6 +1,7 @@
 {
   "name": "docreader-pro",
-  "version": "0.1.0",
+  "version": "1.0.0",
+  "description": "Lector de documentos PDF, Word y HTML en español con índice automático, modo lectura limpia y lectura en voz alta.",
   "private": true,
   "scripts": {
     "postinstall": "node scripts/copy-pdf-worker.mjs",
@@ -15,7 +16,8 @@
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "fixtures": "node scripts/generate-fixtures.mjs"
+    "fixtures": "node scripts/generate-fixtures.mjs",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",
@@ -52,6 +54,7 @@
     "@types/react-dom": "^19",
     "@types/word-extractor": "^1.0.6",
     "@vitejs/plugin-react": "^6.3.0",
+    "@vitest/coverage-v8": "^5.1.1",
     "axe-core": "^4.14.1",
     "docx": "^9.16.0",
     "eslint": "^9",
@@ -66,5 +69,16 @@
     "typescript": "^5",
     "vitest": "^5.1.1",
     "vitest-axe": "^0.1.0"
+  },
+  "overrides": {
+    "next": {
+      "postcss": "^8.5.33"
+    },
+    "@ts-morph/common": {
+      "minimatch": "^11.0.9"
+    }
+  },
+  "engines": {
+    "node": ">=20.9.0"
   }
 }

@@ -3,3 +3,4 @@ node_modules
 package-lock.json
 components/ui
 tests/fixtures
+public/pdf.worker.min.mjs

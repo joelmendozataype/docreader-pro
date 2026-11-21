@@ -259,3 +259,20 @@
     contain-intrinsic-size: auto 3em;
   }
 }
+
+/* ───────────── Lectura en voz alta (TTS) ───────────── */
+@layer components {
+  .reader-content .tts-active {
+    background-color: color-mix(in oklch, var(--primary) 7%, transparent);
+    box-shadow: 0 0 0 0.35em color-mix(in oklch, var(--primary) 7%, transparent);
+    border-radius: 0.2em;
+    transition: background-color 150ms;
+  }
+}
+/* ::highlight(tts-sentence | tts-word) se inyecta desde lib/tts/highlight.ts:
+   el parser de CSS de Turbopack aún no reconoce ese pseudo-elemento. */
+@media (prefers-reduced-motion: reduce) {
+  .reader-content .tts-active {
+    transition: none;
+  }
+}

@@ -2,10 +2,11 @@
 
 import { ArrowLeftIcon, FileQuestionIcon, ListTreeIcon } from 'lucide-react';
 import Link from 'next/link';
-import { type CSSProperties, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, memo, type Ref, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ReaderSettings } from '@/components/reader/ReaderSettings';
 import { TableOfContents } from '@/components/reader/TableOfContents';
+import { TTSControls } from '@/components/reader/TTSControls';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -13,6 +14,7 @@ import { useActiveSection } from '@/hooks/useActiveSection';
 import { useMediaQuery, usePrefersReducedMotion } from '@/hooks/useMediaQuery';
 import { useReaderSettings, WIDTH_CH } from '@/hooks/useReaderSettings';
 import { useReadingProgress } from '@/hooks/useReadingProgress';
+import { useTTS } from '@/hooks/useTTS';
 import { getDocument, updateDocumentMeta } from '@/lib/db/indexeddb';
 import { sanitizeForReader } from '@/lib/reader/sanitize';
 import { useDocumentsStore } from '@/lib/store/documents-store';
@@ -111,9 +113,24 @@ function ReaderHeaderShell({ children }: { children?: React.ReactNode }) {
  * re-render (scroll, sección activa…) volvería a escribir todo el HTML,
  * perdiendo el foco y los nodos que usan el índice y el TTS.
  */
-const ReaderContent = memo(function ReaderContent({ html, large }: { html: string; large: boolean }) {
+const ReaderContent = memo(function ReaderContent({
+  html,
+  large,
+  ref,
+}: {
+  html: string;
+  large: boolean;
+  ref?: Ref<HTMLDivElement>;
+}) {
   const inner = useMemo(() => ({ __html: html }), [html]);
-  return <div className="reader-content" data-large={large || undefined} dangerouslySetInnerHTML={inner} />;
+  return (
+    <div
+      ref={ref}
+      className="reader-content"
+      data-large={large || undefined}
+      dangerouslySetInnerHTML={inner}
+    />
+  );
 });
 
 function isTypingTarget(target: EventTarget | null) {
@@ -126,6 +143,7 @@ function ReaderView({ doc }: { doc: ReaderDocument }) {
   const isDesktop = useMediaQuery('(min-width: 1024px)');
   const reducedMotion = usePrefersReducedMotion();
   const articleRef = useRef<HTMLElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const [tocSheetOpen, setTocSheetOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [fontsReady, setFontsReady] = useState(false);
@@ -152,6 +170,8 @@ function ReaderView({ doc }: { doc: ReaderDocument }) {
     layoutKey,
   });
   const activeId = useActiveSection(sectionIds, fontsReady);
+  const tts = useTTS({ containerRef: contentRef, reducedMotion, topOffset: 64, bottomOffset: 112 });
+  const { pauseAtElement } = tts;
 
   useEffect(() => {
     const previous = document.title;
@@ -166,13 +186,15 @@ function ReaderView({ doc }: { doc: ReaderDocument }) {
       const target = document.getElementById(sectionId);
       if (!target) return;
       setTocSheetOpen(false);
+      // la lectura en voz alta se pausa y se retomará desde el título elegido
+      pauseAtElement(target);
       target.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'start' });
       // mover el foco al título para lectores de pantalla y teclado
       target.setAttribute('tabindex', '-1');
       target.focus({ preventScroll: true });
       history.replaceState(null, '', `#${sectionId}`);
     },
-    [reducedMotion],
+    [reducedMotion, pauseAtElement],
   );
 
   const toggleToc = useCallback(() => {
@@ -288,7 +310,7 @@ function ReaderView({ doc }: { doc: ReaderDocument }) {
           </aside>
         )}
 
-        <main id="contenido" tabIndex={-1} className="min-w-0 flex-1 py-10 outline-none sm:py-14">
+        <main id="contenido" tabIndex={-1} className="min-w-0 flex-1 pt-10 pb-36 outline-none sm:pt-14">
           <article
             ref={articleRef}
             aria-labelledby={titleId}
@@ -317,13 +339,17 @@ function ReaderView({ doc }: { doc: ReaderDocument }) {
               </p>
             </header>
 
-            <ReaderContent html={html} large={large} />
+            <ReaderContent ref={contentRef} html={html} large={large} />
 
             <p className="text-muted-foreground mt-16 border-t pt-6 text-center font-sans text-sm">
               Fin del documento
             </p>
           </article>
         </main>
+      </div>
+
+      <div className="pointer-events-none fixed inset-x-0 bottom-4 z-30 flex justify-center px-3">
+        <TTSControls tts={tts} className="pointer-events-auto max-w-full" />
       </div>
 
       {!isDesktop && (

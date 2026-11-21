@@ -13,7 +13,8 @@ const SHORTCUTS: [string, string][] = [
   ['A', 'Abrir estos ajustes'],
   ['N / P', 'Sección siguiente / anterior'],
   ['+ / −', 'Agrandar / achicar la letra'],
-  ['↑ ↓ · Espacio', 'Desplazarse por el texto'],
+  ['Espacio', 'Reproducir / pausar la voz'],
+  ['↑ ↓ · RePág AvPág', 'Desplazarse por el texto'],
 ];
 
 /** Panel de ajustes de lectura: tamaño, tema, fuente, ancho e interlineado. */
@@ -42,7 +43,7 @@ export function ReaderSettings({
       >
         <ALargeSmallIcon className="size-5" />
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-80 gap-4 p-4">
+      <PopoverContent align="end" className="w-80 gap-4 p-4" aria-label="Ajustes de lectura">
         <div className="space-y-1.5">
           <p className="text-muted-foreground text-xs font-medium" id="font-size-label">
             Tamaño de letra

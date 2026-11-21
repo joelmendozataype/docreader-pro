@@ -32,26 +32,25 @@ export function Dropzone({
     }
   };
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+  const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
     accept: ACCEPT,
     multiple: true,
+    // el teclado usa el botón real «elige archivos»; la zona no es un control anidado
+    noKeyboard: true,
     onDropAccepted: onFiles,
     onDropRejected,
   });
 
   return (
     <div
-      {...getRootProps({
-        role: 'button',
-        'aria-label': 'Subir documentos: arrastra archivos aquí o pulsa Enter para elegirlos',
-      })}
+      {...getRootProps()}
       className={cn(
-        'group border-muted-foreground/30 hover:border-primary/60 hover:bg-muted/40 focus-visible:ring-ring/50 focus-visible:border-ring flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed text-center transition-colors outline-none focus-visible:ring-3',
+        'group border-muted-foreground/30 hover:border-primary/60 hover:bg-muted/40 flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed text-center transition-colors',
         compact ? 'px-4 py-6' : 'px-6 py-12',
         isDragActive && 'border-primary bg-primary/5',
       )}
     >
-      <input {...getInputProps()} />
+      <input {...getInputProps({ 'aria-label': 'Elegir documentos para subir' })} />
       <UploadCloudIcon
         className={cn(
           'text-muted-foreground size-10 transition-transform',
@@ -63,8 +62,18 @@ export function Dropzone({
         {isDragActive ? 'Suelta los archivos para añadirlos' : 'Arrastra tus documentos aquí'}
       </p>
       <p className="text-muted-foreground text-sm">
-        o <span className="text-primary font-medium underline underline-offset-4">elige archivos</span> · PDF,
-        Word (.docx, .doc) y HTML
+        o{' '}
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation(); // la zona también abre el selector al hacer clic
+            open();
+          }}
+          className="text-primary focus-visible:ring-ring/50 rounded-sm font-medium underline underline-offset-4 outline-none focus-visible:ring-3"
+        >
+          elige archivos
+        </button>{' '}
+        · PDF, Word (.docx, .doc) y HTML
       </p>
       {!compact && (
         <p className="text-muted-foreground text-xs">

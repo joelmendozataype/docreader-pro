@@ -7,9 +7,11 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 
 import './globals.css';
 
-const sans = Inter({ variable: '--font-sans', subsets: ['latin', 'latin-ext'] });
-const serif = Literata({ variable: '--font-serif', subsets: ['latin', 'latin-ext'] });
-const mono = Geist_Mono({ variable: '--font-geist-mono', subsets: ['latin'] });
+// 'latin' ya incluye á é í ó ú ñ ü ¿ ¡: 'latin-ext' solo añadía descargas.
+// Literata y la monoespaciada no se precargan: solo las usa el lector.
+const sans = Inter({ variable: '--font-sans', subsets: ['latin'], display: 'swap' });
+const serif = Literata({ variable: '--font-serif', subsets: ['latin'], preload: false });
+const mono = Geist_Mono({ variable: '--font-geist-mono', subsets: ['latin'], preload: false });
 
 export const metadata: Metadata = {
   title: 'DocReader Pro',

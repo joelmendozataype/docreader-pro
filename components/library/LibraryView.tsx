@@ -1,9 +1,10 @@
 'use client';
 
-import { AnimatePresence, MotionConfig, motion } from 'framer-motion';
-import { LibraryBigIcon, RotateCcwIcon, SearchXIcon, TriangleAlertIcon } from 'lucide-react';
-import { useState } from 'react';
+import { AnimatePresence, domAnimation, LazyMotion, m, MotionConfig } from 'framer-motion';
+import { RotateCcwIcon, SearchXIcon, TriangleAlertIcon } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 
+import { EmptyLibraryIllustration } from '@/components/illustrations';
 import { DeleteDialog, RenameDialog } from '@/components/library/DocumentDialogs';
 import { DocumentCard } from '@/components/library/DocumentCard';
 import { LibraryToolbar } from '@/components/library/LibraryToolbar';
@@ -23,114 +24,133 @@ export function LibraryView() {
   const [deleting, setDeleting] = useState<DocumentMeta | null>(null);
 
   const lib = useDocuments({ query, type, sort });
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  // atajo: «/» enfoca la búsqueda (como en muchos sitios)
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== '/' || event.ctrlKey || event.metaKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+      if (!searchRef.current) return;
+      event.preventDefault();
+      searchRef.current.focus();
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
   const hasDocs = lib.total > 0;
   const filtering = query.trim() !== '' || type !== 'all';
 
   return (
-    <MotionConfig reducedMotion="user">
-      <div className="space-y-8">
-        <section aria-labelledby="upload-title" className="space-y-3">
-          <h2 id="upload-title" className="sr-only">
-            Añadir documentos
-          </h2>
-          <Dropzone onFiles={lib.add} compact={hasDocs} />
-          <UploadQueue
-            uploads={lib.uploads}
-            onCancel={lib.cancelUpload}
-            onRetry={lib.retryUpload}
-            onDismiss={lib.dismissUpload}
-          />
-        </section>
-
-        <section aria-labelledby="library-title" className="space-y-4">
-          <div className="flex items-baseline justify-between gap-2">
-            <h2 id="library-title" className="text-xl font-semibold tracking-tight">
-              Mi biblioteca
+    // LazyMotion + m: solo se carga el paquete de animaciones DOM (~60 % menos que motion)
+    <LazyMotion features={domAnimation} strict>
+      <MotionConfig reducedMotion="user">
+        <div className="space-y-8">
+          <section aria-labelledby="upload-title" className="space-y-3">
+            <h2 id="upload-title" className="sr-only">
+              Añadir documentos
             </h2>
-            {hasDocs && (
-              <p className="text-muted-foreground text-sm" aria-live="polite">
-                {filtering ? `${lib.visible.length} de ${lib.total}` : lib.total}{' '}
-                {lib.total === 1 ? 'documento' : 'documentos'}
-              </p>
-            )}
-          </div>
+            <Dropzone onFiles={lib.add} compact={hasDocs} />
+            <UploadQueue
+              uploads={lib.uploads}
+              onCancel={lib.cancelUpload}
+              onRetry={lib.retryUpload}
+              onDismiss={lib.dismissUpload}
+            />
+          </section>
 
-          {lib.isLoading ? (
-            <LibrarySkeleton />
-          ) : lib.status === 'error' ? (
-            <StateMessage
-              icon={<TriangleAlertIcon className="text-destructive size-8" />}
-              title="No se pudo abrir tu biblioteca"
-              description={lib.loadError ?? 'Revisa que el navegador permita guardar datos de este sitio.'}
-              action={
-                <Button variant="outline" onClick={() => void lib.load()}>
-                  <RotateCcwIcon /> Reintentar
-                </Button>
-              }
-            />
-          ) : !hasDocs ? (
-            <StateMessage
-              icon={<LibraryBigIcon className="text-muted-foreground size-8" />}
-              title="Tu biblioteca está vacía"
-              description="Sube un PDF, un Word o una página HTML y aparecerá aquí, guardado en este navegador."
-            />
-          ) : (
-            <>
-              <LibraryToolbar
-                query={query}
-                onQueryChange={setQuery}
-                type={type}
-                onTypeChange={setType}
-                sort={sort}
-                onSortChange={setSort}
-              />
-              {lib.visible.length === 0 ? (
-                <StateMessage
-                  icon={<SearchXIcon className="text-muted-foreground size-8" />}
-                  title="Sin resultados"
-                  description="Ningún documento coincide con la búsqueda o el filtro."
-                  action={
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setQuery('');
-                        setType('all');
-                      }}
-                    >
-                      Limpiar filtros
-                    </Button>
-                  }
-                />
-              ) : (
-                <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  <AnimatePresence initial={false} mode="popLayout">
-                    {lib.visible.map((doc) => (
-                      <motion.li
-                        key={doc.id}
-                        layout
-                        initial={{ opacity: 0, scale: 0.97 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.97 }}
-                        transition={{ duration: 0.18 }}
-                      >
-                        <DocumentCard doc={doc} onRename={setRenaming} onDelete={setDeleting} />
-                      </motion.li>
-                    ))}
-                  </AnimatePresence>
-                </ul>
+          <section aria-labelledby="library-title" className="space-y-4">
+            <div className="flex items-baseline justify-between gap-2">
+              <h2 id="library-title" className="text-xl font-semibold tracking-tight">
+                Mi biblioteca
+              </h2>
+              {hasDocs && (
+                <p className="text-muted-foreground text-sm" aria-live="polite">
+                  {filtering ? `${lib.visible.length} de ${lib.total}` : lib.total}{' '}
+                  {lib.total === 1 ? 'documento' : 'documentos'}
+                </p>
               )}
-            </>
-          )}
-        </section>
-      </div>
+            </div>
 
-      <RenameDialog doc={renaming} onClose={() => setRenaming(null)} onSubmit={lib.rename} />
-      <DeleteDialog
-        doc={deleting}
-        onClose={() => setDeleting(null)}
-        onConfirm={(id) => void lib.remove(id)}
-      />
-    </MotionConfig>
+            {lib.isLoading ? (
+              <LibrarySkeleton />
+            ) : lib.status === 'error' ? (
+              <StateMessage
+                icon={<TriangleAlertIcon className="text-destructive size-8" />}
+                title="No se pudo abrir tu biblioteca"
+                description={lib.loadError ?? 'Revisa que el navegador permita guardar datos de este sitio.'}
+                action={
+                  <Button variant="outline" onClick={() => void lib.load()}>
+                    <RotateCcwIcon /> Reintentar
+                  </Button>
+                }
+              />
+            ) : !hasDocs ? (
+              <StateMessage
+                icon={<EmptyLibraryIllustration className="text-muted-foreground" />}
+                title="Tu biblioteca está vacía"
+                description="Sube un PDF, un Word o una página HTML y aparecerá aquí, guardado en este navegador."
+              />
+            ) : (
+              <>
+                <LibraryToolbar
+                  searchRef={searchRef}
+                  query={query}
+                  onQueryChange={setQuery}
+                  type={type}
+                  onTypeChange={setType}
+                  sort={sort}
+                  onSortChange={setSort}
+                />
+                {lib.visible.length === 0 ? (
+                  <StateMessage
+                    icon={<SearchXIcon className="text-muted-foreground size-8" />}
+                    title="Sin resultados"
+                    description="Ningún documento coincide con la búsqueda o el filtro."
+                    action={
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setQuery('');
+                          setType('all');
+                        }}
+                      >
+                        Limpiar filtros
+                      </Button>
+                    }
+                  />
+                ) : (
+                  <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    <AnimatePresence initial={false} mode="popLayout">
+                      {lib.visible.map((doc) => (
+                        <m.li
+                          key={doc.id}
+                          layout
+                          initial={{ opacity: 0, scale: 0.97 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.97 }}
+                          transition={{ duration: 0.18 }}
+                        >
+                          <DocumentCard doc={doc} onRename={setRenaming} onDelete={setDeleting} />
+                        </m.li>
+                      ))}
+                    </AnimatePresence>
+                  </ul>
+                )}
+              </>
+            )}
+          </section>
+        </div>
+
+        <RenameDialog doc={renaming} onClose={() => setRenaming(null)} onSubmit={lib.rename} />
+        <DeleteDialog
+          doc={deleting}
+          onClose={() => setDeleting(null)}
+          onConfirm={(id) => void lib.remove(id)}
+        />
+      </MotionConfig>
+    </LazyMotion>
   );
 }
 

@@ -1,11 +1,13 @@
 /**
  * Convierte un File en ParsedDocument eligiendo dónde procesarlo:
- *  - PDF, DOCX y HTML → en el navegador (sin límite de tamaño de servidor)
+ *  - PDF, DOCX y HTML → en el navegador (sin límite de tamaño de servidor);
+ *    DOCX y HTML en un Web Worker para no congelar la interfaz
  *  - DOC (Word 97-2003) → se sube a /api/upload
  */
 
 import type { ApiErrorCode, ApiResponse } from '@/lib/api/types';
-import { extensionOf, isParseError, parseDocument } from '@/lib/parsers';
+import { detectFileType, extensionOf, isParseError, parseDocument } from '@/lib/parsers';
+import { canUseWorker, parseInWorker, WorkerUnavailableError } from '@/lib/parsers/worker-client';
 import { ACCEPTED_EXTENSIONS, type ParsedDocument } from '@/types/document';
 
 export type ProcessStage = 'reading' | 'parsing' | 'uploading' | 'server';
@@ -48,11 +50,21 @@ export async function processFile(file: File, options: ProcessOptions = {}): Pro
   }
   onProgress?.(0.1, 'parsing');
 
+  const parseOptions = { signal, onProgress: (p: number) => onProgress?.(0.1 + p * 0.85, 'parsing') };
+  // vista sin copia: detectFileType solo lee el inicio y el final del archivo
+  const type = detectFileType(new Uint8Array(data), file.name, file.type);
+
   try {
-    return await parseDocument(
-      { name: file.name, mimeType: file.type, data },
-      { signal, onProgress: (p) => onProgress?.(0.1 + p * 0.85, 'parsing') },
-    );
+    if ((type === 'docx' || type === 'html') && canUseWorker()) {
+      try {
+        return await parseInWorker({ name: file.name, mimeType: file.type, data }, parseOptions);
+      } catch (error) {
+        if (!(error instanceof WorkerUnavailableError)) throw error;
+        // sin worker: se procesa aquí (el buffer se transfirió, se vuelve a leer)
+        data = await file.arrayBuffer();
+      }
+    }
+    return await parseDocument({ name: file.name, mimeType: file.type, data }, parseOptions);
   } catch (error) {
     if (isParseError(error) && error.code === 'NEEDS_SERVER') {
       return uploadToServer(file, options);

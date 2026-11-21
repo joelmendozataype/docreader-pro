@@ -117,7 +117,7 @@ export function TTSControls({ tts, className }: { tts: TTSController; className?
         >
           {tts.error || noSpanish ? <TriangleAlertIcon className="text-amber-600" /> : <Settings2Icon />}
         </PopoverTrigger>
-        <PopoverContent side="top" align="end" className="w-80 gap-3 p-4">
+        <PopoverContent side="top" align="end" className="w-80 gap-3 p-4" aria-label="Opciones de voz">
           <div className="space-y-1.5">
             <label htmlFor={voiceId} className="text-muted-foreground text-xs font-medium">
               Voz

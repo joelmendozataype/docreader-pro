@@ -91,7 +91,12 @@ export function DocumentCard({ doc, onRename, onDelete }: DocumentCardProps) {
       </div>
 
       <dl className="text-muted-foreground mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-        <Badge variant="secondary">{TYPE_LABELS[doc.fileType]}</Badge>
+        <div>
+          <dt className="sr-only">Tipo</dt>
+          <dd>
+            <Badge variant="secondary">{TYPE_LABELS[doc.fileType]}</Badge>
+          </dd>
+        </div>
         <div>
           <dt className="sr-only">Páginas</dt>
           <dd>
@@ -111,8 +116,15 @@ export function DocumentCard({ doc, onRename, onDelete }: DocumentCardProps) {
       </dl>
 
       {progress > 0 && (
-        <div className="flex items-center gap-2" aria-label={`Leído ${progress}%`}>
-          <div className="bg-muted h-1 flex-1 overflow-hidden rounded-full" aria-hidden>
+        <div className="flex items-center gap-2">
+          <div
+            role="progressbar"
+            aria-label="Progreso de lectura"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={progress}
+            className="bg-muted h-1 flex-1 overflow-hidden rounded-full"
+          >
             <div className="bg-primary h-full rounded-full" style={{ width: `${progress}%` }} />
           </div>
           <span className="text-muted-foreground text-xs tabular-nums" aria-hidden>

@@ -1,6 +1,7 @@
 'use client';
 
 import { SearchIcon, XIcon } from 'lucide-react';
+import type { Ref } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,6 +23,7 @@ const SORTS: { value: SortOrder; label: string }[] = [
 ];
 
 interface LibraryToolbarProps {
+  searchRef?: Ref<HTMLInputElement>;
   query: string;
   onQueryChange: (value: string) => void;
   type: TypeFilter;
@@ -31,7 +33,7 @@ interface LibraryToolbarProps {
 }
 
 export function LibraryToolbar(props: LibraryToolbarProps) {
-  const { query, onQueryChange, type, onTypeChange, sort, onSortChange } = props;
+  const { searchRef, query, onQueryChange, type, onTypeChange, sort, onSortChange } = props;
 
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -41,13 +43,23 @@ export function LibraryToolbar(props: LibraryToolbarProps) {
           aria-hidden
         />
         <Input
+          ref={searchRef}
           type="search"
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
           placeholder="Buscar por título, archivo o autor…"
           aria-label="Buscar documentos"
-          className="h-9 pr-8 pl-8 [&::-webkit-search-cancel-button]:appearance-none"
+          aria-keyshortcuts="/"
+          className="peer h-9 pr-8 pl-8 [&::-webkit-search-cancel-button]:appearance-none"
         />
+        {!query && (
+          <kbd
+            aria-hidden
+            className="bg-muted text-muted-foreground pointer-events-none absolute top-1/2 right-2 hidden -translate-y-1/2 rounded border px-1.5 font-mono text-xs peer-focus:hidden sm:block"
+          >
+            /
+          </kbd>
+        )}
         {query && (
           <Button
             variant="ghost"
@@ -61,7 +73,7 @@ export function LibraryToolbar(props: LibraryToolbarProps) {
         )}
       </div>
 
-      <div className="flex min-w-0 items-center gap-2">
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
         <div role="group" aria-label="Filtrar por tipo" className="bg-muted flex rounded-lg p-0.5">
           {TYPES.map((t) => (
             <button
@@ -88,7 +100,7 @@ export function LibraryToolbar(props: LibraryToolbarProps) {
           id="library-sort"
           value={sort}
           onChange={(e) => onSortChange(e.target.value as SortOrder)}
-          className="border-input bg-background focus-visible:ring-ring/50 focus-visible:border-ring dark:bg-input/30 h-9 min-w-0 flex-1 rounded-lg border px-2 text-sm outline-none focus-visible:ring-3 sm:flex-none"
+          className="border-input bg-background focus-visible:ring-ring/50 focus-visible:border-ring dark:bg-input/30 h-9 min-w-44 flex-1 rounded-lg border px-2 text-sm outline-none focus-visible:ring-3 sm:flex-none"
         >
           {SORTS.map((s) => (
             <option key={s.value} value={s.value}>

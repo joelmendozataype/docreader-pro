@@ -1,6 +1,6 @@
 'use client';
 
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, m } from 'framer-motion';
 import {
   CheckCircle2Icon,
   FileIcon,
@@ -53,7 +53,7 @@ export function UploadQueue({ uploads, onCancel, onRetry, onDismiss }: UploadQue
             const percent = Math.round(item.progress * 100);
             const active = item.status === 'processing' || item.status === 'saving';
             return (
-              <motion.li
+              <m.li
                 key={item.id}
                 layout
                 initial={{ opacity: 0, y: -6 }}
@@ -131,7 +131,7 @@ export function UploadQueue({ uploads, onCancel, onRetry, onDismiss }: UploadQue
                     </Button>
                   )}
                 </div>
-              </motion.li>
+              </m.li>
             );
           })}
         </AnimatePresence>

@@ -22,6 +22,7 @@ import {
   processFile,
   type ProcessStage,
 } from '@/lib/upload/process-file';
+import { withRetry } from '@/lib/utils/retry';
 import { createId } from '@/lib/utils/text';
 import type { DocumentMeta } from '@/types/document';
 
@@ -151,7 +152,7 @@ export const useDocumentsStore = create<DocumentsState>()((set, get) => {
       if (get().status === 'loading') return;
       set({ status: 'loading', loadError: undefined });
       try {
-        set({ documents: await listDocuments(), status: 'ready' });
+        set({ documents: await withRetry(() => listDocuments(), { retries: 2 }), status: 'ready' });
       } catch (error) {
         const message = error instanceof Error ? error.message : 'No se pudo abrir la biblioteca.';
         set({ status: 'error', loadError: message });

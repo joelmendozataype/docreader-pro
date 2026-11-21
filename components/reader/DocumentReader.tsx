@@ -1,9 +1,10 @@
 'use client';
 
-import { ArrowLeftIcon, FileQuestionIcon, ListTreeIcon } from 'lucide-react';
+import { ArrowLeftIcon, ListTreeIcon, RotateCcwIcon } from 'lucide-react';
 import Link from 'next/link';
 import { type CSSProperties, memo, type Ref, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { MissingDocumentIllustration } from '@/components/illustrations';
 import { ReaderSettings } from '@/components/reader/ReaderSettings';
 import { TableOfContents } from '@/components/reader/TableOfContents';
 import { TTSControls } from '@/components/reader/TTSControls';
@@ -19,6 +20,7 @@ import { getDocument, updateDocumentMeta } from '@/lib/db/indexeddb';
 import { sanitizeForReader } from '@/lib/reader/sanitize';
 import { useDocumentsStore } from '@/lib/store/documents-store';
 import { foldForSearch, TYPE_LABELS } from '@/lib/utils/library';
+import { withRetry } from '@/lib/utils/retry';
 
 type ReaderDocument = NonNullable<Awaited<ReturnType<typeof getDocument>>>;
 
@@ -31,11 +33,13 @@ type LoadState =
 /** Carga el documento desde IndexedDB y muestra el lector. */
 export function DocumentReader({ id }: { id: string }) {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let alive = true;
     setState({ status: 'loading' });
-    getDocument(id)
+    // IndexedDB puede fallar de forma pasajera (p. ej. otra pestaña actualizando la base)
+    withRetry(() => getDocument(id), { retries: 2 })
       .then((doc) => {
         if (!alive) return;
         setState(doc ? { status: 'ready', doc } : { status: 'missing' });
@@ -52,7 +56,7 @@ export function DocumentReader({ id }: { id: string }) {
     return () => {
       alive = false;
     };
-  }, [id]);
+  }, [id, attempt]);
 
   if (state.status === 'ready') return <ReaderView key={state.doc.id} doc={state.doc} />;
 
@@ -72,7 +76,7 @@ export function DocumentReader({ id }: { id: string }) {
           </div>
         ) : (
           <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed px-6 py-14 text-center">
-            <FileQuestionIcon className="text-muted-foreground size-9" aria-hidden />
+            <MissingDocumentIllustration className="text-muted-foreground" />
             <h1 className="text-lg font-semibold">
               {state.status === 'missing'
                 ? 'Este documento no está en tu biblioteca'
@@ -83,9 +87,16 @@ export function DocumentReader({ id }: { id: string }) {
                 ? 'Puede que se haya eliminado o que lo hayas subido en otro navegador.'
                 : state.message}
             </p>
-            <Link href="/" className={buttonVariants()}>
-              Volver a la biblioteca
-            </Link>
+            <div className="flex flex-wrap justify-center gap-2">
+              {state.status === 'error' && (
+                <Button variant="outline" onClick={() => setAttempt((n) => n + 1)}>
+                  <RotateCcwIcon /> Reintentar
+                </Button>
+              )}
+              <Link href="/" className={buttonVariants()}>
+                Volver a la biblioteca
+              </Link>
+            </div>
           </div>
         )}
       </main>
@@ -133,6 +144,10 @@ const ReaderContent = memo(function ReaderContent({
   );
 });
 
+/** Elementos que ya usan la barra espaciadora (botones, enlaces, menús…). */
+const SPACE_OWNERS =
+  'button, a[href], input, textarea, select, summary, [role=button], [role=radio], [role=menuitem], [role=checkbox], [contenteditable]';
+
 function isTypingTarget(target: EventTarget | null) {
   const el = target as HTMLElement | null;
   return !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
@@ -171,7 +186,7 @@ function ReaderView({ doc }: { doc: ReaderDocument }) {
   });
   const activeId = useActiveSection(sectionIds, fontsReady);
   const tts = useTTS({ containerRef: contentRef, reducedMotion, topOffset: 64, bottomOffset: 112 });
-  const { pauseAtElement } = tts;
+  const { pauseAtElement, toggle: toggleSpeech, supported: speechSupported } = tts;
 
   useEffect(() => {
     const previous = document.title;
@@ -232,6 +247,12 @@ function ReaderView({ doc }: { doc: ReaderDocument }) {
         case '-':
           decreaseFont();
           break;
+        case ' ':
+          // Espacio = reproducir/pausar la voz (salvo si el foco está en un control)
+          if (!speechSupported || (event.target as HTMLElement | null)?.closest?.(SPACE_OWNERS)) return;
+          if (event.repeat) break;
+          toggleSpeech();
+          break;
         default:
           return;
       }
@@ -239,7 +260,16 @@ function ReaderView({ doc }: { doc: ReaderDocument }) {
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [activeId, sectionIds, toggleToc, navigateTo, increaseFont, decreaseFont]);
+  }, [
+    activeId,
+    sectionIds,
+    toggleToc,
+    navigateTo,
+    increaseFont,
+    decreaseFont,
+    toggleSpeech,
+    speechSupported,
+  ]);
 
   // si el primer título del contenido es igual al título, no se repite arriba
   const firstHeading = doc.sections[0];

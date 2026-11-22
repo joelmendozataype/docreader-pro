@@ -106,7 +106,8 @@ describe('si la voz no arranca', () => {
 
   it('sin voces (Brave con escudos) sugiere desactivar los escudos o usar Chrome', async () => {
     const { voiceNotStartedMessage } = await loadHook();
-    expect(voiceNotStartedMessage(0)).toMatch(/Brave[sS]*escudos[sS]*Chrome/);
+    const message = voiceNotStartedMessage(0);
+    for (const word of ['Brave', 'escudos', 'Chrome']) expect(message).toContain(word);
     expect(voiceNotStartedMessage(3)).toContain('volumen multimedia');
   });
 

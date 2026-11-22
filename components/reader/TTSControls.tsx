@@ -41,6 +41,11 @@ export function TTSControls({ tts, className }: { tts: TTSController; className?
     if (tts.error) toast.error('Lectura en voz alta', { description: tts.error, duration: 12_000 });
   }, [tts.error]);
 
+  // avisos que no detienen la lectura (p. ej. una frase saltada); `id` permite repetir el mismo texto
+  useEffect(() => {
+    if (tts.notice) toast.info(tts.notice.text, { id: 'tts-notice', duration: 5_000 });
+  }, [tts.notice]);
+
   if (!tts.supported) {
     return (
       <div

@@ -153,9 +153,26 @@ describe('useTTS', () => {
 
     // el ajuste se mantiene para las frases siguientes
     act(() => synth.finish());
+    expect(synth.last.text).toBe('Capítulo dos');
     expect(synth.last.lang).toBe('');
 
+    // una frase imposible de leer se salta y la lectura continúa, con un aviso informativo
     act(() => synth.fail('synthesis-failed'));
+    expect(synth.last.text).toBe('Texto final.');
+    expect(result.current.status).toBe('playing');
+    expect(result.current.error).toBeNull();
+    expect(result.current.notice?.text).toContain('Se saltó una frase');
+  });
+
+  it('se detiene y avisa solo si fallan varias frases seguidas', () => {
+    const { result } = setup();
+    act(() => result.current.play(0));
+    act(() => synth.fail('synthesis-failed')); // reintento sin voz fija
+    act(() => synth.fail('synthesis-failed')); // reintento con la voz del sistema
+    act(() => synth.fail('synthesis-failed')); // se salta «Capítulo uno»
+    act(() => synth.fail('synthesis-failed')); // se salta el párrafo
+    expect(result.current.status).toBe('playing');
+    act(() => synth.fail('synthesis-failed')); // tercera frase seguida: se detiene
     expect(result.current.status).toBe('paused');
     expect(result.current.error).toContain('Elige otra voz');
   });

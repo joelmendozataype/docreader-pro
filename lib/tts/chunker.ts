@@ -72,3 +72,16 @@ export function wordEnd(text: string, index: number): number {
   match.lastIndex = index;
   return match.test(text) ? match.lastIndex : index + 1;
 }
+
+/**
+ * Prepara el texto para el motor de voz: quita caracteres que algunos motores
+ * (sobre todo en Android) no saben leer y con los que fallan con "synthesis-failed":
+ * emojis, símbolos de uso privado, selectores de variación y unidores invisibles.
+ * Cada carácter se cambia por espacios de la MISMA longitud para que las posiciones
+ * de los eventos boundary sigan coincidiendo con el texto original.
+ */
+export function speakableText(text: string): string {
+  return text.replace(/[\p{Extended_Pictographic}\p{Co}\uFE0E\uFE0F\u200D\u20E3]/gu, (m) =>
+    ' '.repeat(m.length),
+  );
+}

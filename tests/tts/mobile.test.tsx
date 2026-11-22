@@ -150,3 +150,59 @@ describe('si la voz no arranca', () => {
     );
   });
 });
+
+describe('ritmo de la voz en Android', () => {
+  const ANDROID_UA =
+    'Mozilla/5.0 (Linux; Android 14; SM-A546E) AppleWebKit/537.36 Chrome/131 Mobile Safari/537.36';
+
+  it('deja una pausa breve entre frases y la cancela si el usuario pausa', async () => {
+    vi.useFakeTimers();
+    const mod = await loadHook(ANDROID_UA);
+    const { result } = renderHook(() => mod.useTTS({ containerRef: { current: root }, autoScroll: false }));
+    act(() => vi.advanceTimersByTime(1000));
+    act(() => result.current.play());
+    expect(synth.spoken).toHaveLength(1);
+
+    act(() => synth.finish());
+    expect(synth.spoken).toHaveLength(1); // no se pide la siguiente dentro del mismo evento
+    act(() => vi.advanceTimersByTime(mod.ANDROID_GAP_MS));
+    expect(synth.last.text).toBe('Otro párrafo.');
+
+    act(() => synth.finish());
+    act(() => result.current.pause()); // pausa durante la espera
+    act(() => vi.advanceTimersByTime(mod.ANDROID_GAP_MS * 2));
+    expect(synth.last.text).toBe('Otro párrafo.'); // no arrancó la siguiente
+  });
+
+  it('reintenta tras synthesis-failed con esperas crecientes', async () => {
+    vi.useFakeTimers();
+    const mod = await loadHook(ANDROID_UA);
+    const { result } = renderHook(() => mod.useTTS({ containerRef: { current: root }, autoScroll: false }));
+    act(() => vi.advanceTimersByTime(1000));
+    act(() => result.current.play());
+
+    act(() => synth.fail('synthesis-failed'));
+    expect(synth.spoken).toHaveLength(1);
+    act(() => vi.advanceTimersByTime(mod.RETRY_DELAY_MS));
+    expect(synth.spoken).toHaveLength(2);
+
+    act(() => synth.fail('synthesis-failed'));
+    act(() => vi.advanceTimersByTime(mod.RETRY_DELAY_MS));
+    expect(synth.spoken).toHaveLength(2); // la segunda espera es el doble
+    act(() => vi.advanceTimersByTime(mod.RETRY_DELAY_MS));
+    expect(synth.spoken).toHaveLength(3);
+    expect(synth.last.text).toBe('Primera frase. Segunda frase.');
+    expect(result.current.error).toBeNull();
+  });
+});
+
+describe('speakableText', () => {
+  it('quita emojis y símbolos sin mover las posiciones del texto', async () => {
+    const { speakableText } = await import('@/lib/tts/chunker');
+    const input = 'Hola 👋 mundo ✔️ fin';
+    const out = speakableText(input);
+    expect(out).toHaveLength(input.length);
+    expect(out.replace(/\s+/g, ' ')).toBe('Hola mundo fin');
+    expect(speakableText('Costos del 50% — «e-commerce»')).toBe('Costos del 50% — «e-commerce»');
+  });
+});

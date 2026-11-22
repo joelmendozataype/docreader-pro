@@ -15,7 +15,7 @@
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { blockText, getReadableBlocks, rangeFor } from '@/lib/tts/blocks';
-import { type Chunk, splitIntoChunks, wordEnd } from '@/lib/tts/chunker';
+import { type Chunk, speakableText, splitIntoChunks, wordEnd } from '@/lib/tts/chunker';
 import {
   BLOCK_CLASS,
   clearAllHighlights,
@@ -63,6 +63,12 @@ const RETRYABLE_ERRORS = new Set([
   'audio-busy',
 ]);
 const MAX_FALLBACK = 2;
+/** tras este número de frases seguidas imposibles de leer, se detiene y se avisa */
+export const MAX_SKIPPED_IN_A_ROW = 3;
+/** pausa entre frases en Android (pedir la siguiente en el mismo evento la hace fallar) */
+export const ANDROID_GAP_MS = 150;
+/** espera base antes de reintentar en Android (se multiplica por el número de intento) */
+export const RETRY_DELAY_MS = 400;
 
 /** Mensaje en español para cada error de la Web Speech API. */
 export function speechErrorMessage(code: string): string {
@@ -123,6 +129,10 @@ export function useTTS({
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   /** reintentos ante fallos del motor de voz (se mantiene durante la sesión) */
   const fallbackRef = useRef(0);
+  /** frases seguidas que no se pudieron leer */
+  const failStreakRef = useRef(0);
+  /** aviso informativo (no detiene la lectura) */
+  const [notice, setNotice] = useState<{ id: number; text: string } | null>(null);
   const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const synth = supported ? window.speechSynthesis : null;
@@ -224,7 +234,8 @@ export function useTTS({
       posRef.current = { block, chunk, char };
       const piece = getChunks(block)[chunk];
       const el = blocks[block];
-      const text = piece.text.slice(char);
+      // misma longitud que el original: las posiciones de los eventos boundary siguen valiendo
+      const text = speakableText(piece.text.slice(char));
 
       if (!el.classList.contains(BLOCK_CLASS)) markBlock(block);
       setRangeHighlight(SENTENCE_HIGHLIGHT, rangeFor(el, piece.start, piece.start + piece.text.length));
@@ -249,24 +260,45 @@ export function useTTS({
         const start = piece.start + local;
         setRangeHighlight(WORD_HIGHLIGHT, rangeFor(el, start, start + length));
       };
+      /**
+       * Programa la siguiente llamada a speak. En Android, pedir otra frase dentro del
+       * mismo evento (onend/onerror) hace que el motor la rechace con "synthesis-failed":
+       * se deja una pausa breve. Si entretanto se pausa o detiene, `gen` cambia y no se habla.
+       */
+      const continueWith = (next: Position, delay: number) => {
+        if (!IS_ANDROID || delay <= 0) return speak(next, true);
+        setTimeout(() => {
+          if (gen === genRef.current) speak(next, true);
+        }, delay);
+      };
+
       utterance.onend = () => {
         started = true;
         if (gen !== genRef.current) return;
-        speak({ block, chunk: chunk + 1, char: 0 }, true);
+        failStreakRef.current = 0;
+        continueWith({ block, chunk: chunk + 1, char: 0 }, ANDROID_GAP_MS);
       };
       utterance.onerror = (event) => {
         if (gen !== genRef.current) return;
         if (event.error === 'interrupted' || event.error === 'canceled') return;
-        // fallo del motor de voz: se reintenta la misma frase con una configuración más simple
-        if (RETRYABLE_ERRORS.has(event.error) && fallbackRef.current < MAX_FALLBACK) {
-          fallbackRef.current++;
-          const resume = posRef.current; // conserva la última palabra leída
-          speak(
-            { block, chunk, char: resume.block === block && resume.chunk === chunk ? resume.char : char },
-            true,
-          );
-          return;
+        if (RETRYABLE_ERRORS.has(event.error)) {
+          // 1) se reintenta la misma frase con una configuración más simple, esperando un poco más cada vez
+          if (fallbackRef.current < MAX_FALLBACK) {
+            fallbackRef.current++;
+            const resume = posRef.current; // conserva la última palabra leída
+            const from = resume.block === block && resume.chunk === chunk ? resume.char : char;
+            continueWith({ block, chunk, char: from }, RETRY_DELAY_MS * fallbackRef.current);
+            return;
+          }
+          // 2) si ni así se puede leer, se salta esa frase y se sigue, salvo que fallen varias seguidas
+          failStreakRef.current++;
+          if (failStreakRef.current < MAX_SKIPPED_IN_A_ROW) {
+            setNotice({ id: Date.now(), text: 'Se saltó una frase que el motor de voz no pudo leer.' });
+            continueWith({ block, chunk: chunk + 1, char: 0 }, RETRY_DELAY_MS);
+            return;
+          }
         }
+        failStreakRef.current = 0;
         setError(speechErrorMessage(event.error));
         genRef.current++;
         setStatusBoth('paused');
@@ -453,6 +485,7 @@ export function useTTS({
     supported,
     status,
     error,
+    notice,
     voices,
     voice,
     rate: prefs.rate,

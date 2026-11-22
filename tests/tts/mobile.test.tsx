@@ -130,6 +130,9 @@ describe('si la voz no arranca', () => {
       supported: true,
       status: 'paused',
       error: 'La voz no comenzó.',
+      notice: null,
+      errorLog: ['synthesis-failed (párrafo 3, intento 1)'],
+      fallbackLevel: 1,
       voices: [],
       voice: null,
       rate: 1,
@@ -204,5 +207,16 @@ describe('speakableText', () => {
     expect(out).toHaveLength(input.length);
     expect(out.replace(/\s+/g, ' ')).toBe('Hola mundo fin');
     expect(speakableText('Costos del 50% — «e-commerce»')).toBe('Costos del 50% — «e-commerce»');
+  });
+});
+
+describe('diagnóstico en el panel de voz', () => {
+  it('registra los errores del motor y el nivel de reintento', async () => {
+    const { useTTS } = await loadHook();
+    const { result } = renderHook(() => useTTS({ containerRef: { current: root }, autoScroll: false }));
+    act(() => result.current.play());
+    act(() => synth.fail('synthesis-failed'));
+    expect(result.current.fallbackLevel).toBe(1);
+    expect(result.current.errorLog).toEqual(['synthesis-failed (párrafo 1, intento 1)']);
   });
 });

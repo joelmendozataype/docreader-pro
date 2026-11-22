@@ -133,6 +133,9 @@ export function useTTS({
   const failStreakRef = useRef(0);
   /** aviso informativo (no detiene la lectura) */
   const [notice, setNotice] = useState<{ id: number; text: string } | null>(null);
+  /** últimos errores del motor de voz, para el diagnóstico del panel de voz */
+  const [errorLog, setErrorLog] = useState<string[]>([]);
+  const [fallbackLevel, setFallbackLevel] = useState(0);
   const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const synth = supported ? window.speechSynthesis : null;
@@ -281,10 +284,14 @@ export function useTTS({
       utterance.onerror = (event) => {
         if (gen !== genRef.current) return;
         if (event.error === 'interrupted' || event.error === 'canceled') return;
+        // se calcula ya: la función de setErrorLog se ejecuta después de cambiar fallbackRef
+        const entry = `${event.error} (párrafo ${block + 1}, intento ${fallbackRef.current + 1})`;
+        setErrorLog((log) => [...log.slice(-4), entry]);
         if (RETRYABLE_ERRORS.has(event.error)) {
           // 1) se reintenta la misma frase con una configuración más simple, esperando un poco más cada vez
           if (fallbackRef.current < MAX_FALLBACK) {
             fallbackRef.current++;
+            setFallbackLevel(fallbackRef.current);
             const resume = posRef.current; // conserva la última palabra leída
             const from = resume.block === block && resume.chunk === chunk ? resume.char : char;
             continueWith({ block, chunk, char: from }, RETRY_DELAY_MS * fallbackRef.current);
@@ -459,6 +466,7 @@ export function useTTS({
       saveTTSPrefs(next);
       voiceRef.current = voicesRef.current.find((v) => v.voiceURI === voiceURI) ?? voiceRef.current;
       fallbackRef.current = 0; // elección explícita: se vuelve a usar la voz elegida
+      setFallbackLevel(0);
       restartIfPlaying();
     },
     [restartIfPlaying],
@@ -486,6 +494,8 @@ export function useTTS({
     status,
     error,
     notice,
+    errorLog,
+    fallbackLevel,
     voices,
     voice,
     rate: prefs.rate,

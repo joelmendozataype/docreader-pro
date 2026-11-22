@@ -20,6 +20,9 @@ import { RATES } from '@/lib/tts/prefs';
 import { isSpanish, voiceLabel } from '@/lib/tts/voices';
 import { cn } from '@/lib/utils';
 
+/** commit publicado (Vercel lo expone en el build); sirve para saber si el celular tiene la última versión */
+const APP_VERSION = process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? 'local';
+
 const STATUS_TEXT = {
   idle: 'Lectura en voz alta detenida',
   playing: 'Leyendo en voz alta',
@@ -178,6 +181,27 @@ export function TTSControls({ tts, className }: { tts: TTSController; className?
               {tts.error}
             </p>
           )}
+          <details className="text-muted-foreground border-t pt-2 text-xs">
+            <summary className="cursor-pointer font-medium">Diagnóstico</summary>
+            <dl className="mt-1.5 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5">
+              <dt>Versión</dt>
+              <dd className="font-mono">{APP_VERSION}</dd>
+              <dt>Voces</dt>
+              <dd>
+                {tts.voices.length} ({tts.voices.filter(isSpanish).length} en español)
+              </dd>
+              <dt>En uso</dt>
+              <dd>
+                {tts.fallbackLevel === 0
+                  ? (tts.voice?.name ?? 'predeterminada del sistema')
+                  : tts.fallbackLevel === 1
+                    ? `solo idioma ${tts.voice?.lang ?? 'es-ES'}`
+                    : 'predeterminada del sistema'}
+              </dd>
+              <dt>Errores</dt>
+              <dd>{tts.errorLog.length ? tts.errorLog.join(' · ') : 'ninguno'}</dd>
+            </dl>
+          </details>
           <p className="text-muted-foreground text-xs">
             Las voces «en línea» suenan más naturales pero no resaltan palabra por palabra; las locales sí.
           </p>

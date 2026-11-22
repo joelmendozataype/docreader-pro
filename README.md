@@ -1,5 +1,7 @@
 # DocReader Pro
 
+**🌐 Demo en línea: [docreader-pro-alpha.vercel.app](https://docreader-pro-alpha.vercel.app)**
+
 Aplicación web para **leer documentos PDF, Word y HTML en español** sin distracciones: extrae el texto limpio, genera un índice navegable y lo **lee en voz alta** resaltando cada palabra. Todo se guarda en el navegador; los PDF, DOCX y HTML ni siquiera salen de tu equipo.
 
 ## Características

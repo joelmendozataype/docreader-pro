@@ -10,7 +10,8 @@ import {
   TriangleAlertIcon,
   VolumeXIcon,
 } from 'lucide-react';
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
+import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -34,6 +35,11 @@ export function TTSControls({ tts, className }: { tts: TTSController; className?
   const rateId = useId();
   const voiceId = useId();
   const [showAllVoices, setShowAllVoices] = useState(false);
+
+  // en el celular el aviso del panel de voz pasa desapercibido: se muestra también como notificación
+  useEffect(() => {
+    if (tts.error) toast.error('Lectura en voz alta', { description: tts.error, duration: 12_000 });
+  }, [tts.error]);
 
   if (!tts.supported) {
     return (
@@ -123,7 +129,10 @@ export function TTSControls({ tts, className }: { tts: TTSController; className?
               Voz
             </label>
             {tts.voices.length === 0 ? (
-              <p className="text-muted-foreground text-sm">Cargando voces del sistema…</p>
+              <p className="text-muted-foreground text-sm">
+                El navegador no muestra su lista de voces; se usará la voz predeterminada del sistema. En
+                Brave, los escudos pueden ocultarlas.
+              </p>
             ) : (
               <select
                 id={voiceId}

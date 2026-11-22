@@ -48,6 +48,20 @@ export interface UseTTSOptions {
   bottomOffset?: number;
 }
 
+const IS_ANDROID = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
+/** espera tras cancel() en Android antes de volver a hablar */
+export const ANDROID_CANCEL_DELAY_MS = 250;
+/** si la voz no empieza en este tiempo, se considera que el navegador no la inició */
+export const START_TIMEOUT_MS = 4000;
+
+/** Mensaje accionable cuando el navegador acepta el texto pero no suena nada. */
+export function voiceNotStartedMessage(voiceCount: number): string {
+  if (voiceCount === 0) {
+    return 'Tu navegador no ofrece voces para leer en voz alta. En Brave, toca el ícono del león y desactiva los escudos (o «Bloquear huellas digitales») para este sitio, o abre la página en Chrome.';
+  }
+  return 'La voz no comenzó. Sube el volumen multimedia y revisa que el teléfono tenga un motor de voz: Ajustes → Accesibilidad → Texto a voz → «Servicios de voz de Google».';
+}
+
 export function isTTSSupported(): boolean {
   return typeof window !== 'undefined' && 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
 }
@@ -78,6 +92,9 @@ export function useTTS({
   // se guarda en un ref para que un objeto nuevo en cada render no reinicie efectos
   const containerHolder = useRef(containerRef);
   containerHolder.current = containerRef;
+
+  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const synth = supported ? window.speechSynthesis : null;
 
@@ -154,7 +171,7 @@ export function useTTS({
 
   // ── reproducción ───────────────────────────────────────
   const speak = useCallback(
-    (pos: Position) => {
+    (pos: Position, afterEnd = false) => {
       if (!synth) return;
       const blocks = getBlocks();
 
@@ -190,7 +207,9 @@ export function useTTS({
       utterance.lang = v?.lang ?? 'es-ES';
       utterance.rate = prefsRef.current.rate;
 
+      let started = false;
       utterance.onboundary = (event) => {
+        started = true;
         if (gen !== genRef.current || event.name === 'sentence') return;
         const local = char + event.charIndex;
         posRef.current = { block, chunk, char: local };
@@ -199,8 +218,9 @@ export function useTTS({
         setRangeHighlight(WORD_HIGHLIGHT, rangeFor(el, start, start + length));
       };
       utterance.onend = () => {
+        started = true;
         if (gen !== genRef.current) return;
-        speak({ block, chunk: chunk + 1, char: 0 });
+        speak({ block, chunk: chunk + 1, char: 0 }, true);
       };
       utterance.onerror = (event) => {
         if (gen !== genRef.current) return;
@@ -214,9 +234,38 @@ export function useTTS({
         setStatusBoth('paused');
       };
 
+      utterance.onstart = () => {
+        if (gen === genRef.current) started = true;
+      };
+
       setError(null);
-      synth.cancel(); // vacía la cola interna del navegador antes de hablar
-      synth.speak(utterance);
+      // se guarda una referencia: Chrome en Android puede liberar el enunciado
+      // (recolector de basura) antes de terminar y entonces nunca llega `onend`
+      utteranceRef.current = utterance;
+
+      const go = () => {
+        if (gen !== genRef.current) return;
+        synth.resume(); // Android a veces deja el sintetizador en pausa interna
+        synth.speak(utterance);
+        // vigilancia: si la voz no arranca, se avisa en vez de quedarse "leyendo" en silencio
+        if (watchdogRef.current) clearTimeout(watchdogRef.current);
+        watchdogRef.current = setTimeout(() => {
+          if (gen !== genRef.current || started || synth.speaking) return;
+          genRef.current++;
+          synth.cancel();
+          setStatusBoth('paused');
+          setError(voiceNotStartedMessage(voicesRef.current.length));
+        }, START_TIMEOUT_MS);
+      };
+
+      // Tras `onend` la cola ya está vacía: cancelar ahí (como antes) anulaba en Android
+      // la frase siguiente. Solo se cancela si de verdad hay algo sonando.
+      const busy = !afterEnd && (synth.speaking || synth.pending);
+      if (busy) synth.cancel();
+      // En Android cancel() es asíncrono: si se habla en el mismo instante, también
+      // cancela lo nuevo. Se espera un momento antes de hablar.
+      if (busy && IS_ANDROID) setTimeout(go, ANDROID_CANCEL_DELAY_MS);
+      else go();
       setStatusBoth('playing');
     },
     [synth, getBlocks, getChunks, markBlock, clearHighlight, setStatusBoth],
@@ -354,6 +403,8 @@ export function useTTS({
       // genRef es un contador (no un nodo): incrementarlo invalida los eventos pendientes
       // eslint-disable-next-line react-hooks/exhaustive-deps
       genRef.current++;
+      if (watchdogRef.current) clearTimeout(watchdogRef.current);
+      utteranceRef.current = null;
       synth?.cancel();
       clearAllHighlights(container);
     };

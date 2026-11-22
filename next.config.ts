@@ -1,5 +1,7 @@
 import type { NextConfig } from 'next';
 
+import { ISOLATED_ROUTES } from './lib/isolation';
+
 /**
  * La voz integrada (Piper, compilada con Emscripten) contiene ramas para Node.js
  * con require('fs' | 'path' | 'crypto'). En el navegador nunca se ejecutan, pero
@@ -13,20 +15,27 @@ const nextConfig: NextConfig = {
   // pdfjs carga su worker dinámicamente y word-extractor usa fs/stream de Node.
   serverExternalPackages: ['pdfjs-dist', 'word-extractor', 'mammoth'],
   /**
-   * Aislamiento de origen cruzado: permite SharedArrayBuffer, que ONNX Runtime
-   * necesita para usar varios hilos del procesador en la voz integrada.
-   * "credentialless" deja cargar recursos de CDN (cdnjs, jsdelivr, Hugging Face)
-   * sin que tengan que enviar cabeceras especiales.
+   * Aislamiento de origen cruzado (ver lib/isolation.ts): solo en el lector y en
+   * /prueba-voz, donde ONNX Runtime necesita SharedArrayBuffer para usar varios hilos.
+   * "credentialless" deja cargar recursos de CDN (cdnjs, jsdelivr, Hugging Face).
+   * En el resto, "same-origin-allow-popups" deja funcionar el inicio de sesión de
+   * Google y el selector de Drive. Si varias reglas coinciden, gana la última.
    */
   async headers() {
     return [
       {
         source: '/:path*',
-        headers: [
-          { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
-          { key: 'Cross-Origin-Embedder-Policy', value: 'credentialless' },
-        ],
+        headers: [{ key: 'Cross-Origin-Opener-Policy', value: 'same-origin-allow-popups' }],
       },
+      ...ISOLATED_ROUTES.flatMap((route) =>
+        [route, `${route}/:path*`].map((source) => ({
+          source,
+          headers: [
+            { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
+            { key: 'Cross-Origin-Embedder-Policy', value: 'credentialless' },
+          ],
+        })),
+      ),
     ];
   },
   turbopack: {

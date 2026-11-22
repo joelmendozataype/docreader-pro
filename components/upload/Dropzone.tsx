@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { type FileRejection, useDropzone } from 'react-dropzone';
 import { toast } from 'sonner';
 
+import { DriveButton } from '@/components/upload/DriveButton';
 import { cn } from '@/lib/utils';
 
 /**
@@ -96,6 +97,7 @@ export function Dropzone({
         </button>{' '}
         · PDF, Word (.docx, .doc) y HTML
       </p>
+      <DriveButton onFiles={onFiles} />
       {!compact && (
         <p className="text-muted-foreground text-xs">
           PDF, Word y HTML se procesan en tu navegador, sin límite de tamaño. Nada sale de tu equipo salvo los

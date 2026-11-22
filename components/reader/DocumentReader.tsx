@@ -1,7 +1,6 @@
 'use client';
 
 import { ArrowLeftIcon, ListTreeIcon, RotateCcwIcon } from 'lucide-react';
-import Link from 'next/link';
 import { type CSSProperties, memo, type Ref, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { MissingDocumentIllustration } from '@/components/illustrations';
@@ -93,9 +92,10 @@ export function DocumentReader({ id }: { id: string }) {
                   <RotateCcwIcon /> Reintentar
                 </Button>
               )}
-              <Link href="/" className={buttonVariants()}>
+              {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- carga completa: ver lib/isolation.ts */}
+              <a href="/" className={buttonVariants()}>
                 Volver a la biblioteca
-              </Link>
+              </a>
             </div>
           </div>
         )}
@@ -108,10 +108,12 @@ function ReaderHeaderShell({ children }: { children?: React.ReactNode }) {
   return (
     <header className="bg-background/90 sticky top-0 z-30 border-b backdrop-blur">
       <div className="mx-auto flex h-14 max-w-7xl items-center gap-1 px-2 sm:px-4">
-        <Link href="/" className={buttonVariants({ variant: 'ghost' })} aria-label="Volver a la biblioteca">
+        {/* <a> y no <Link>: la biblioteca va sin aislamiento (ver lib/isolation.ts) */}
+        {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+        <a href="/" className={buttonVariants({ variant: 'ghost' })} aria-label="Volver a la biblioteca">
           <ArrowLeftIcon />
           <span className="hidden sm:inline">Biblioteca</span>
-        </Link>
+        </a>
         {children}
       </div>
     </header>

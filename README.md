@@ -163,6 +163,36 @@ Cuando la voz del navegador no funciona, el lector ofrece una **voz integrada**:
 - Se elige en ⚙ → «Motor de voz» o automáticamente cuando la voz del navegador falla en todos sus intentos. Resalta frase por frase (no palabra por palabra).
 - La página `/prueba-voz` permite diagnosticar la voz del navegador y probar la integrada.
 
+## Google Drive (opcional)
+
+El botón **«Elegir de Google Drive»** abre el selector oficial de Google y descarga
+los archivos elegidos directo en el navegador (los Documentos de Google se exportan
+a .docx). Solo se pide el permiso `drive.file`: la app únicamente puede leer los
+archivos que el usuario elige, no el resto de su Drive.
+
+El botón aparece solo si están definidas estas variables (públicas, van al navegador):
+
+| Variable | Qué es |
+| --- | --- |
+| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | ID de cliente OAuth (tipo «Aplicación web») |
+| `NEXT_PUBLIC_GOOGLE_API_KEY` | Clave de API restringida a la Google Picker API |
+| `NEXT_PUBLIC_GOOGLE_APP_ID` | Número del proyecto de Google Cloud |
+
+Configuración en https://console.cloud.google.com:
+
+1. Crear un proyecto y habilitar **Google Drive API** y **Google Picker API**.
+2. **Pantalla de consentimiento de OAuth**: tipo *Externo*, añadir el permiso
+   `.../auth/drive.file` y, mientras esté en modo *Prueba*, añadir como
+   *usuarios de prueba* las cuentas de Google que lo usarán.
+3. **Credenciales → ID de cliente OAuth → Aplicación web**, con orígenes de
+   JavaScript autorizados `https://docreader-pro-alpha.vercel.app` y `http://localhost:3000`.
+4. **Credenciales → Clave de API**, restringida a *Google Picker API* y a esos sitios web.
+5. El número del proyecto está en el *Panel* del proyecto.
+
+Para que funcione la ventana de Google, el inicio usa `Cross-Origin-Opener-Policy:
+same-origin-allow-popups` sin COEP; solo el lector y `/prueba-voz` van aislados
+(ver `lib/isolation.ts`). Al pasar de uno a otro la página se carga completa.
+
 ## Otras limitaciones conocidas
 
 - **PDF escaneados** (solo imágenes) no tienen texto: se rechazan con un aviso; haría falta OCR.

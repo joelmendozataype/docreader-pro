@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Geist_Mono, Inter, Literata } from 'next/font/google';
 
+import { IsolationGuard } from '@/components/isolation-guard';
 import { ThemeProvider } from '@/components/theme-provider';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -35,6 +36,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         >
           <TooltipProvider>{children}</TooltipProvider>
           <Toaster richColors position="bottom-right" />
+          <IsolationGuard />
         </ThemeProvider>
       </body>
     </html>

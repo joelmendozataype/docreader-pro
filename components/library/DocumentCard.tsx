@@ -8,7 +8,6 @@ import {
   PencilIcon,
   Trash2Icon,
 } from 'lucide-react';
-import Link from 'next/link';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -53,9 +52,10 @@ export function DocumentCard({ doc, onRename, onDelete }: DocumentCardProps) {
         <div className="min-w-0 flex-1">
           <h3 className="line-clamp-2 leading-snug font-semibold">
             {/* enlace "estirado": toda la tarjeta abre el lector */}
-            <Link href={href} className="outline-none after:absolute after:inset-0 after:rounded-xl">
+            {/* <a> y no <Link>: el lector necesita carga completa (ver lib/isolation.ts) */}
+            <a href={href} className="outline-none after:absolute after:inset-0 after:rounded-xl">
               {doc.title}
-            </Link>
+            </a>
           </h3>
           <p className="text-muted-foreground mt-0.5 truncate text-xs" title={doc.fileName}>
             {doc.fileName}
@@ -76,7 +76,7 @@ export function DocumentCard({ doc, onRename, onDelete }: DocumentCardProps) {
             <MoreVerticalIcon />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-44">
-            <DropdownMenuItem render={<Link href={href} />}>
+            <DropdownMenuItem render={<a href={href} />}>
               <BookOpenIcon /> Abrir
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => onRename(doc)}>

@@ -1,6 +1,7 @@
 'use client';
 
 import { UploadCloudIcon } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { type FileRejection, useDropzone } from 'react-dropzone';
 import { toast } from 'sonner';
 
@@ -17,6 +18,20 @@ const ACCEPT = {
   'text/html': ['.html', '.htm'],
 };
 
+/**
+ * En varios Android (Samsung, ZTE…) un `accept` con tipos de Word/HTML hace que el
+ * navegador muestre solo «Cámara / Fotos y videos» en vez del gestor de archivos.
+ * Ahí el selector se abre sin filtro; los archivos de otro tipo igual se rechazan
+ * (react-dropzone filtra con ACCEPT y luego se verifica por magic bytes).
+ */
+function useOpenPickerWithoutFilter() {
+  const [android, setAndroid] = useState(false);
+  useEffect(() => {
+    setAndroid(/android/i.test(navigator.userAgent));
+  }, []);
+  return android;
+}
+
 export function Dropzone({
   onFiles,
   compact = false,
@@ -32,6 +47,7 @@ export function Dropzone({
     }
   };
 
+  const noPickerFilter = useOpenPickerWithoutFilter();
   const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
     accept: ACCEPT,
     multiple: true,
@@ -50,7 +66,12 @@ export function Dropzone({
         isDragActive && 'border-primary bg-primary/5',
       )}
     >
-      <input {...getInputProps({ 'aria-label': 'Elegir documentos para subir' })} />
+      <input
+        {...getInputProps({
+          'aria-label': 'Elegir documentos para subir',
+          ...(noPickerFilter && { accept: undefined }),
+        })}
+      />
       <UploadCloudIcon
         className={cn(
           'text-muted-foreground size-10 transition-transform',

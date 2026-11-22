@@ -113,9 +113,9 @@ describe('preferencias', () => {
     expect(clampRate(0.1)).toBe(0.5);
     expect(clampRate(Number.NaN)).toBe(1);
     localStorage.setItem(TTS_PREFS_KEY, '{roto');
-    expect(loadTTSPrefs()).toEqual({ voiceURI: null, rate: 1 });
-    saveTTSPrefs({ voiceURI: 'x', rate: 1.25 });
-    expect(loadTTSPrefs()).toEqual({ voiceURI: 'x', rate: 1.25 });
+    expect(loadTTSPrefs()).toEqual({ voiceURI: null, rate: 1, engine: 'browser' });
+    saveTTSPrefs({ voiceURI: 'x', rate: 1.25, engine: 'neural' });
+    expect(loadTTSPrefs()).toEqual({ voiceURI: 'x', rate: 1.25, engine: 'neural' });
   });
 });
 

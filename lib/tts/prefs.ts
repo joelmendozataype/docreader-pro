@@ -1,14 +1,18 @@
-/** Preferencias de voz y velocidad (localStorage). */
+/** Preferencias de voz, velocidad y motor (localStorage). */
 
 export const TTS_PREFS_KEY = 'docreader:tts';
 export const RATES = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2] as const;
 
+/** 'browser' = voz del navegador (speechSynthesis) · 'neural' = voz integrada (Piper) */
+export type TTSEngine = 'browser' | 'neural';
+
 export interface TTSPrefs {
   voiceURI: string | null;
   rate: number;
+  engine: TTSEngine;
 }
 
-export const DEFAULT_TTS_PREFS: TTSPrefs = { voiceURI: null, rate: 1 };
+export const DEFAULT_TTS_PREFS: TTSPrefs = { voiceURI: null, rate: 1, engine: 'browser' };
 
 export function clampRate(rate: number): number {
   if (!Number.isFinite(rate)) return 1;
@@ -21,6 +25,7 @@ export function loadTTSPrefs(): TTSPrefs {
     return {
       voiceURI: typeof data?.voiceURI === 'string' ? data.voiceURI : null,
       rate: clampRate(Number(data?.rate ?? 1)),
+      engine: data?.engine === 'neural' ? 'neural' : 'browser',
     };
   } catch {
     return DEFAULT_TTS_PREFS;

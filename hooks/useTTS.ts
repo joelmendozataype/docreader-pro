@@ -23,7 +23,8 @@ import {
   setRangeHighlight,
   WORD_HIGHLIGHT,
 } from '@/lib/tts/highlight';
-import { clampRate, loadTTSPrefs, saveTTSPrefs } from '@/lib/tts/prefs';
+import { getSharedNeuralEngine, isNeuralSupported, type NeuralEngine } from '@/lib/tts/neural';
+import { clampRate, loadTTSPrefs, saveTTSPrefs, type TTSEngine } from '@/lib/tts/prefs';
 import { langCandidates, pickVoice, sortVoices } from '@/lib/tts/voices';
 
 export type TTSStatus = 'idle' | 'playing' | 'paused';
@@ -46,7 +47,15 @@ export interface UseTTSOptions {
   topOffset?: number;
   /** margen inferior ocupado por los controles (px) */
   bottomOffset?: number;
+  /** motor de voz integrada (inyectable en tests; por defecto el compartido de la app) */
+  neural?: NeuralEngine;
 }
+
+/** estado de la voz integrada en este navegador */
+export type NeuralStatus = 'unknown' | 'missing' | 'downloading' | 'ready' | 'error';
+
+/** frases que se preparan por adelantado con la voz integrada mientras suena la actual */
+export const NEURAL_PREFETCH = 1;
 
 const IS_ANDROID = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
 /** espera tras cancel() en Android antes de volver a hablar */
@@ -124,8 +133,12 @@ export function useTTS({
   reducedMotion = false,
   topOffset = 64,
   bottomOffset = 120,
+  neural,
 }: UseTTSOptions) {
-  const [supported] = useState(isTTSSupported);
+  const [browserSupported] = useState(isTTSSupported);
+  const [neuralSupported] = useState(isNeuralSupported);
+  /** hay al menos un motor: la voz del navegador o la integrada */
+  const supported = browserSupported || neuralSupported;
   const [status, setStatus] = useState<TTSStatus>('idle');
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [prefs, setPrefs] = useState(loadTTSPrefs);
@@ -157,7 +170,29 @@ export function useTTS({
   const [fallbackLevel, setFallbackLevel] = useState(0);
   const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const synth = supported ? window.speechSynthesis : null;
+  const synth = browserSupported ? window.speechSynthesis : null;
+
+  // ── voz integrada (Piper) ──────────────────────────────
+  const neuralRef = useRef<NeuralEngine | null>(neural ?? null);
+  const getNeural = useCallback(() => (neuralRef.current ??= getSharedNeuralEngine()), []);
+  const engineRef = useRef<TTSEngine>(
+    prefs.engine === 'neural' && neuralSupported ? 'neural' : browserSupported ? 'browser' : 'neural',
+  );
+  const [engine, setEngineState] = useState<TTSEngine>(engineRef.current);
+  const [neuralStatus, setNeuralStatus] = useState<NeuralStatus>('unknown');
+  const [neuralProgress, setNeuralProgress] = useState(0);
+  /** la voz del navegador falló: se ofrece descargar la integrada */
+  const [offerNeural, setOfferNeural] = useState(false);
+  /** generando el audio de la frase (voz integrada) */
+  const [loading, setLoading] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioUrlRef = useRef<string | null>(null);
+  /** frase cuyo audio está cargado en el reproductor */
+  const audioPosRef = useRef<{ block: number; chunk: number } | null>(null);
+  const prefetchRef = useRef(new Map<string, Promise<Blob>>());
+  /** dónde empezaron los fallos de la voz del navegador (para retomar ahí con la integrada) */
+  const firstFailPosRef = useRef<Position | null>(null);
+  const speakNeuralRef = useRef<(pos: Position) => void>(() => {});
 
   const setStatusBoth = useCallback((next: TTSStatus) => {
     statusRef.current = next;
@@ -230,9 +265,202 @@ export function useTTS({
     setCurrentBlock(null);
   }, []);
 
-  // ── reproducción ───────────────────────────────────────
+  // ── reproducción con la voz integrada ──────────────────
+  const releaseAudio = useCallback(() => {
+    const audio = audioRef.current;
+    if (audio) {
+      audio.onended = null;
+      audio.onerror = null;
+      audio.pause();
+      audio.removeAttribute('src');
+    }
+    if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
+    audioUrlRef.current = null;
+    audioPosRef.current = null;
+  }, []);
+
+  /** Audio de una frase: se genera una sola vez y se reutiliza (precarga). */
+  const neuralAudioFor = useCallback(
+    (block: number, chunk: number) => {
+      const key = `${block}:${chunk}`;
+      let promise = prefetchRef.current.get(key);
+      if (!promise) {
+        const text = speakableText(getChunks(block)[chunk].text).replace(/\s+/g, ' ').trim();
+        promise = getNeural().synthesize(text);
+        promise.catch(() => prefetchRef.current.delete(key));
+        prefetchRef.current.set(key, promise);
+      }
+      return promise;
+    },
+    [getChunks, getNeural],
+  );
+
+  const nextPosition = useCallback(
+    (block: number, chunk: number) => {
+      const blocks = getBlocks();
+      let b = block;
+      let c = chunk + 1;
+      while (b < blocks.length && c >= getChunks(b).length) {
+        b++;
+        c = 0;
+      }
+      return b < blocks.length ? { block: b, chunk: c } : null;
+    },
+    [getBlocks, getChunks],
+  );
+
+  /** Reproduce el audio ya cargado y encadena la frase siguiente al terminar. */
+  const startAudio = useCallback(
+    (gen: number, block: number, chunk: number) => {
+      const audio = audioRef.current;
+      if (!audio) return;
+      audio.playbackRate = prefsRef.current.rate;
+      audio.onended = () => {
+        if (gen !== genRef.current) return;
+        prefetchRef.current.delete(`${block}:${chunk}`);
+        speakNeuralRef.current({ block, chunk: chunk + 1, char: 0 });
+      };
+      audio.onerror = () => {
+        if (gen !== genRef.current) return;
+        genRef.current++;
+        setStatusBoth('paused');
+        setError('No se pudo reproducir el audio de la voz integrada.');
+      };
+      const played = audio.play();
+      played?.catch((err: unknown) => {
+        if (gen !== genRef.current) return;
+        genRef.current++;
+        setStatusBoth('paused');
+        setError(
+          (err as { name?: string })?.name === 'NotAllowedError'
+            ? 'El navegador bloqueó el audio. Pulsa reproducir de nuevo.'
+            : 'No se pudo reproducir el audio de la voz integrada.',
+        );
+      });
+    },
+    [setStatusBoth],
+  );
+
+  const speakNeural = useCallback(
+    (pos: Position) => {
+      const blocks = getBlocks();
+      let { block, chunk } = pos;
+      while (block < blocks.length && chunk >= getChunks(block).length) {
+        block++;
+        chunk = 0;
+      }
+      if (block >= blocks.length) {
+        genRef.current++;
+        releaseAudio();
+        prefetchRef.current.clear();
+        clearHighlight();
+        setLoading(false);
+        posRef.current = { block: 0, chunk: 0, char: 0 };
+        setStatusBoth('idle');
+        return;
+      }
+
+      const gen = ++genRef.current;
+      posRef.current = { block, chunk, char: 0 };
+      const piece = getChunks(block)[chunk];
+      const el = blocks[block];
+      if (!el.classList.contains(BLOCK_CLASS)) markBlock(block);
+      setRangeHighlight(SENTENCE_HIGHLIGHT, rangeFor(el, piece.start, piece.start + piece.text.length));
+      setRangeHighlight(WORD_HIGHLIGHT, null); // la voz integrada no informa palabra por palabra
+      setError(null);
+      setStatusBoth('playing');
+
+      const audioPromise = neuralAudioFor(block, chunk);
+      // mientras suena esta frase se prepara la siguiente, para leer sin pausas
+      let next = nextPosition(block, chunk);
+      for (let i = 0; i < NEURAL_PREFETCH && next; i++) {
+        void neuralAudioFor(next.block, next.chunk).catch(() => undefined);
+        next = nextPosition(next.block, next.chunk);
+      }
+
+      setLoading(true);
+      audioPromise
+        .then((blob) => {
+          if (gen !== genRef.current) return;
+          setLoading(false);
+          releaseAudio();
+          const audio = (audioRef.current ??= new Audio());
+          const url = URL.createObjectURL(blob);
+          audioUrlRef.current = url;
+          audioPosRef.current = { block, chunk };
+          audio.src = url;
+          startAudio(gen, block, chunk);
+        })
+        .catch((err: unknown) => {
+          if (gen !== genRef.current) return;
+          setLoading(false);
+          genRef.current++;
+          setStatusBoth('paused');
+          setError(`La voz integrada falló: ${err instanceof Error ? err.message : String(err)}`);
+        });
+    },
+    [
+      getBlocks,
+      getChunks,
+      releaseAudio,
+      clearHighlight,
+      setStatusBoth,
+      markBlock,
+      neuralAudioFor,
+      nextPosition,
+      startAudio,
+    ],
+  );
+  speakNeuralRef.current = speakNeural;
+
+  const switchEngine = useCallback((next: TTSEngine) => {
+    engineRef.current = next;
+    setEngineState(next);
+    const prefsNext = { ...prefsRef.current, engine: next };
+    prefsRef.current = prefsNext;
+    setPrefs(prefsNext);
+    saveTTSPrefs(prefsNext);
+  }, []);
+
+  /**
+   * La voz del navegador no funciona en este dispositivo: si la integrada ya está
+   * descargada se continúa con ella; si no, se ofrece descargarla.
+   */
+  const browserGaveUp = useCallback(
+    (pos: Position, message: string) => {
+      genRef.current++;
+      synth?.cancel();
+      setStatusBoth('paused');
+      if (!neuralSupported) {
+        setError(message);
+        return;
+      }
+      posRef.current = pos;
+      getNeural()
+        .isDownloaded()
+        .then((ready) => {
+          if (ready) {
+            setNeuralStatus('ready');
+            switchEngine('neural');
+            setNotice({
+              id: Date.now(),
+              text: 'La voz del navegador no funciona en este dispositivo: se usa la voz integrada.',
+            });
+            speakNeuralRef.current(pos);
+          } else {
+            setNeuralStatus('missing');
+            setOfferNeural(true);
+          }
+        })
+        .catch(() => setError(message));
+    },
+    [synth, neuralSupported, getNeural, switchEngine, setStatusBoth],
+  );
+
+  // ── reproducción con la voz del navegador ──────────────
   const speak = useCallback(
     (pos: Position, afterEnd = false) => {
+      if (engineRef.current === 'neural') return speakNeural(pos);
       if (!synth) return;
       const blocks = getBlocks();
 
@@ -298,6 +526,7 @@ export function useTTS({
         started = true;
         if (gen !== genRef.current) return;
         failStreakRef.current = 0;
+        firstFailPosRef.current = null;
         continueWith({ block, chunk: chunk + 1, char: 0 }, ANDROID_GAP_MS);
       };
       utterance.onerror = (event) => {
@@ -306,6 +535,7 @@ export function useTTS({
         // se calcula ya: la función de setErrorLog se ejecuta después de cambiar fallbackRef
         const entry = `${event.error} (párrafo ${block + 1}, intento ${fallbackRef.current + 1})`;
         setErrorLog((log) => [...log.slice(-4), entry]);
+        firstFailPosRef.current ??= { block, chunk, char: 0 };
         if (RETRYABLE_ERRORS.has(event.error)) {
           // 1) se reintenta la misma frase con una configuración más simple, esperando un poco más cada vez
           if (fallbackRef.current < attemptPlan(voiceRef.current).length - 1) {
@@ -325,6 +555,11 @@ export function useTTS({
           }
         }
         failStreakRef.current = 0;
+        const resumeAt = firstFailPosRef.current ?? { block, chunk, char: 0 };
+        firstFailPosRef.current = null;
+        // el motor del navegador no sirve aquí: se pasa a la voz integrada (o se ofrece)
+        if (RETRYABLE_ERRORS.has(event.error))
+          return browserGaveUp(resumeAt, speechErrorMessage(event.error));
         setError(speechErrorMessage(event.error));
         genRef.current++;
         setStatusBoth('paused');
@@ -347,10 +582,7 @@ export function useTTS({
         if (watchdogRef.current) clearTimeout(watchdogRef.current);
         watchdogRef.current = setTimeout(() => {
           if (gen !== genRef.current || started || synth.speaking) return;
-          genRef.current++;
-          synth.cancel();
-          setStatusBoth('paused');
-          setError(voiceNotStartedMessage(voicesRef.current.length));
+          browserGaveUp({ block, chunk, char: 0 }, voiceNotStartedMessage(voicesRef.current.length));
         }, START_TIMEOUT_MS);
       };
 
@@ -364,7 +596,7 @@ export function useTTS({
       else go();
       setStatusBoth('playing');
     },
-    [synth, getBlocks, getChunks, markBlock, clearHighlight, setStatusBoth],
+    [synth, getBlocks, getChunks, markBlock, clearHighlight, setStatusBoth, speakNeural, browserGaveUp],
   );
 
   /** Primer bloque visible en pantalla (para empezar donde está leyendo el usuario). */
@@ -388,20 +620,43 @@ export function useTTS({
 
   const play = useCallback(
     (fromBlock?: number) => {
-      if (!synth) return;
+      if (!supported) return;
+      setOfferNeural(false);
       if (fromBlock !== undefined) return speak({ block: fromBlock, chunk: 0, char: 0 });
-      if (statusRef.current === 'paused') return speak(posRef.current);
+      if (statusRef.current === 'paused') {
+        // voz integrada en pausa a mitad de frase: se continúa el mismo audio (pausa real)
+        const audio = audioRef.current;
+        const loaded = audioPosRef.current;
+        const { block, chunk } = posRef.current;
+        if (
+          engineRef.current === 'neural' &&
+          audio?.src &&
+          !audio.ended &&
+          loaded?.block === block &&
+          loaded.chunk === chunk
+        ) {
+          const gen = ++genRef.current;
+          setStatusBoth('playing');
+          return startAudio(gen, block, chunk);
+        }
+        return speak(posRef.current);
+      }
       if (statusRef.current === 'idle') return speak({ block: firstVisibleBlock(), chunk: 0, char: 0 });
     },
-    [synth, speak, firstVisibleBlock],
+    [supported, speak, firstVisibleBlock, startAudio, setStatusBoth],
   );
 
   const pause = useCallback(() => {
-    if (!synth || statusRef.current !== 'playing') return;
+    if (!supported || statusRef.current !== 'playing') return;
     genRef.current++;
-    synth.cancel();
+    if (engineRef.current === 'neural') {
+      audioRef.current?.pause();
+      setLoading(false);
+    } else {
+      synth?.cancel();
+    }
     setStatusBoth('paused');
-  }, [synth, setStatusBoth]);
+  }, [supported, synth, setStatusBoth]);
 
   const toggle = useCallback(() => {
     if (statusRef.current === 'playing') pause();
@@ -409,13 +664,17 @@ export function useTTS({
   }, [pause, play]);
 
   const stop = useCallback(() => {
-    if (!synth) return;
+    if (!supported) return;
     genRef.current++;
-    synth.cancel();
+    synth?.cancel();
+    releaseAudio();
+    prefetchRef.current.clear();
+    setLoading(false);
+    setOfferNeural(false);
     clearHighlight();
     posRef.current = { block: 0, chunk: 0, char: 0 };
     setStatusBoth('idle');
-  }, [synth, clearHighlight, setStatusBoth]);
+  }, [supported, synth, releaseAudio, clearHighlight, setStatusBoth]);
 
   /** Salta al párrafo anterior/siguiente (sigue leyendo si estaba leyendo). */
   const skip = useCallback(
@@ -449,6 +708,8 @@ export function useTTS({
       if (statusRef.current === 'playing') {
         genRef.current++;
         synth?.cancel();
+        releaseAudio();
+        setLoading(false);
       }
       if (index !== -1) {
         posRef.current = { block: index, chunk: 0, char: 0 };
@@ -458,7 +719,7 @@ export function useTTS({
       }
       setStatusBoth('paused');
     },
-    [getBlocks, synth, markBlock, setStatusBoth],
+    [getBlocks, synth, markBlock, setStatusBoth, releaseAudio],
   );
 
   // ── preferencias ───────────────────────────────────────
@@ -472,10 +733,91 @@ export function useTTS({
       prefsRef.current = next;
       setPrefs(next);
       saveTTSPrefs(next);
+      // la voz integrada cambia de velocidad al instante, sin reiniciar la frase
+      if (engineRef.current === 'neural') {
+        if (audioRef.current) audioRef.current.playbackRate = next.rate;
+        return;
+      }
       restartIfPlaying();
     },
     [restartIfPlaying],
   );
+
+  /** Descarga la voz integrada; con `resume` sigue leyendo al terminar (cuando la ofreció un fallo). */
+  const downloadNeural = useCallback(
+    async (resume = true) => {
+      if (!neuralSupported) return false;
+      setNeuralStatus('downloading');
+      setNeuralProgress(0);
+      setError(null);
+      try {
+        await getNeural().download((p) => setNeuralProgress(p));
+        setNeuralStatus('ready');
+        setOfferNeural(false);
+        switchEngine('neural');
+        if (resume) speakNeuralRef.current(posRef.current);
+        return true;
+      } catch (err) {
+        setNeuralStatus('error');
+        setError(
+          `No se pudo descargar la voz integrada (${err instanceof Error ? err.message : String(err)}). Revisa tu conexión e inténtalo de nuevo.`,
+        );
+        return false;
+      }
+    },
+    [neuralSupported, getNeural, switchEngine],
+  );
+
+  /** Elegir motor a mano en el panel de voz. */
+  const setEngine = useCallback(
+    async (next: TTSEngine) => {
+      if (next === engineRef.current) return;
+      const wasPlaying = statusRef.current === 'playing';
+      if (wasPlaying) {
+        genRef.current++;
+        synth?.cancel();
+        releaseAudio();
+        setLoading(false);
+        setStatusBoth('paused');
+      }
+      if (next === 'neural') {
+        const ready =
+          neuralStatus === 'ready' ||
+          (await getNeural()
+            .isDownloaded()
+            .catch(() => false));
+        if (!ready) {
+          setNeuralStatus('missing');
+          return void (await downloadNeural(wasPlaying));
+        }
+        setNeuralStatus('ready');
+      }
+      switchEngine(next);
+      if (wasPlaying) speak(posRef.current);
+    },
+    [synth, releaseAudio, setStatusBoth, neuralStatus, getNeural, downloadNeural, switchEngine, speak],
+  );
+
+  const dismissNeuralOffer = useCallback(() => setOfferNeural(false), []);
+
+  // con la voz integrada elegida: se comprueba si está descargada (para el panel) y,
+  // si lo está, se precarga el modelo para que la primera frase no tarde al pulsar ▶
+  useEffect(() => {
+    if (engine !== 'neural' || !neuralSupported) return;
+    let alive = true;
+    const voice = getNeural();
+    voice
+      .isDownloaded()
+      .then((ready) => {
+        if (!alive) return;
+        setNeuralStatus(ready ? 'ready' : 'missing');
+        if (ready) void voice.warmup().catch(() => undefined);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [engine, neuralSupported, getNeural]);
 
   const setVoice = useCallback(
     (voiceURI: string) => {
@@ -494,6 +836,7 @@ export function useTTS({
   // ── limpieza al salir del lector ───────────────────────
   useEffect(() => {
     const container = containerHolder.current.current;
+    const prefetched = prefetchRef.current; // el mismo Map durante toda la vida del hook
     const onPageHide = () => synth?.cancel();
     window.addEventListener('pagehide', onPageHide);
     return () => {
@@ -504,12 +847,22 @@ export function useTTS({
       if (watchdogRef.current) clearTimeout(watchdogRef.current);
       utteranceRef.current = null;
       synth?.cancel();
+      releaseAudio();
+      prefetched.clear();
       clearAllHighlights(container);
     };
-  }, [synth]);
+  }, [synth, releaseAudio]);
 
   return {
     supported,
+    browserSupported,
+    engine,
+    setEngine,
+    neural: { supported: neuralSupported, status: neuralStatus, progress: neuralProgress },
+    offerNeural,
+    dismissNeuralOffer,
+    downloadNeural,
+    loading,
     status,
     error,
     notice,

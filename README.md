@@ -150,6 +150,18 @@ Auditado con Lighthouse (accesibilidad 100 en biblioteca y lector) y axe-core (0
 - **`pause()`/`resume()` no son fiables** en Chrome con voces en línea ni en Android: la app pausa cancelando y retoma desde la última palabra.
 - **Hace falta un gesto del usuario** (un clic o una tecla) para empezar a hablar.
 - La API de resaltado de rangos (`::highlight`) requiere Chrome/Edge 105+, Safari 17.2+ o Firefox 140+; en navegadores anteriores solo se marca el párrafo.
+- **Android:** las voces llegan como `es_US` (guion bajo) y el propio motor las rechaza en `utterance.lang`: la app normaliza a `es-US`. En algunos teléfonos el navegador no logra hablar con el motor de voz del sistema aunque este funcione (`synthesis-failed` en todo); para eso existe la voz integrada.
+
+## Voz integrada (Piper)
+
+Cuando la voz del navegador no funciona, el lector ofrece una **voz integrada**: el modelo neuronal de código abierto [Piper](https://github.com/rhasspy/piper) (`es_MX-ald-medium`, español latinoamericano) ejecutado en el propio navegador con ONNX Runtime + WebAssembly, mediante [`@mintplex-labs/piper-tts-web`](https://www.npmjs.com/package/@mintplex-labs/piper-tts-web).
+
+- **Descarga única de ~60 MB** desde Hugging Face; queda guardada en el almacenamiento privado del sitio (OPFS) y funciona sin conexión.
+- Se genera en un **Web Worker** (`lib/tts/neural.worker.ts`) para no congelar la página, y se prepara la frase siguiente mientras suena la actual.
+- La página se sirve **aislada** (`COOP: same-origin` + `COEP: credentialless`, en `next.config.ts`) para que ONNX Runtime use varios hilos del procesador: en las pruebas, el tiempo de generación bajó de 24.5 s a 4.2 s por frase.
+- ONNX Runtime se carga desde jsDelivr sin empaquetar (`lib/tts/ort-cdn.ts`), porque al empaquetarlo sus hilos fallan.
+- Se elige en ⚙ → «Motor de voz» o automáticamente cuando la voz del navegador falla en todos sus intentos. Resalta frase por frase (no palabra por palabra).
+- La página `/prueba-voz` permite diagnosticar la voz del navegador y probar la integrada.
 
 ## Otras limitaciones conocidas
 
@@ -162,7 +174,7 @@ Auditado con Lighthouse (accesibilidad 100 en biblioteca y lector) y axe-core (0
 ## Tests
 
 ```bash
-npm test               # 214 tests
+npm test               # 241 tests
 npm run test:coverage  # informe en coverage/index.html
 ```
 

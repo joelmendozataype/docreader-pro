@@ -137,6 +137,7 @@ describe('si la voz no arranca', () => {
       browserSupported: true,
       neural: { supported: false, status: 'unknown', progress: 0 },
       offerNeural: false,
+      offerReason: 'browser',
       loading: false,
       setEngine: vi.fn(),
       downloadNeural: vi.fn(),

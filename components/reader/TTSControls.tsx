@@ -51,6 +51,24 @@ const NEURAL_STATUS_TEXT = {
   error: 'La descarga falló. Inténtalo de nuevo.',
 } as const;
 
+const OFFER_TEXT = {
+  browser: {
+    title: 'La voz del navegador no funciona en este dispositivo',
+    body: `Puedes usar la voz integrada de DocReader: se descarga una sola vez (~${NEURAL_VOICE_SIZE_MB} MB, mejor con wifi) y luego funciona en este navegador sin depender de él.`,
+    action: 'Descargar voz integrada y continuar',
+  },
+  corrupt: {
+    title: 'La voz integrada se descargó incompleta',
+    body: `La descarga anterior se cortó y el archivo quedó dañado; ya se borró. Descárgala de nuevo (~${NEURAL_VOICE_SIZE_MB} MB), mejor conectado a wifi y sin cerrar la página.`,
+    action: 'Descargar de nuevo y continuar',
+  },
+  missing: {
+    title: 'Falta descargar la voz integrada',
+    body: `Se descarga una sola vez (~${NEURAL_VOICE_SIZE_MB} MB, mejor con wifi) y luego funciona sin conexión.`,
+    action: 'Descargar voz integrada y continuar',
+  },
+} as const;
+
 function formatRate(rate: number) {
   return `${rate.toLocaleString('es-PE')}×`;
 }
@@ -122,7 +140,7 @@ export function TTSControls({ tts, className }: { tts: TTSController; className?
         >
           <div className="flex items-start gap-2">
             <h2 id="neural-offer-title" className="flex-1 text-sm font-semibold">
-              La voz del navegador no funciona en este dispositivo
+              {OFFER_TEXT[tts.offerReason].title}
             </h2>
             {!downloading && (
               <Button
@@ -135,15 +153,12 @@ export function TTSControls({ tts, className }: { tts: TTSController; className?
               </Button>
             )}
           </div>
-          <p className="text-muted-foreground text-xs">
-            Puedes usar la <strong>voz integrada</strong> de DocReader: se descarga una sola vez (~
-            {NEURAL_VOICE_SIZE_MB} MB, mejor con wifi) y luego funciona en este navegador sin depender de él.
-          </p>
+          <p className="text-muted-foreground text-xs">{OFFER_TEXT[tts.offerReason].body}</p>
           {downloading ? (
             <DownloadProgress progress={tts.neural.progress} />
           ) : (
             <Button className="w-full" onClick={() => void tts.downloadNeural(true)}>
-              <DownloadIcon /> Descargar voz integrada y continuar
+              <DownloadIcon /> {OFFER_TEXT[tts.offerReason].action}
             </Button>
           )}
         </section>

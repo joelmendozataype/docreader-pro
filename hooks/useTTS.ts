@@ -24,6 +24,7 @@ import {
   WORD_HIGHLIGHT,
 } from '@/lib/tts/highlight';
 import { getSharedNeuralEngine, isNeuralSupported, type NeuralEngine } from '@/lib/tts/neural';
+import { NEURAL_ERROR } from '@/lib/tts/neural-protocol';
 import { clampRate, loadTTSPrefs, saveTTSPrefs, type TTSEngine } from '@/lib/tts/prefs';
 import { langCandidates, pickVoice, sortVoices } from '@/lib/tts/voices';
 
@@ -53,6 +54,9 @@ export interface UseTTSOptions {
 
 /** estado de la voz integrada en este navegador */
 export type NeuralStatus = 'unknown' | 'missing' | 'downloading' | 'ready' | 'error';
+
+/** motivo por el que se ofrece descargar la voz integrada */
+export type NeuralOfferReason = 'browser' | 'corrupt' | 'missing';
 
 /** frases que se preparan por adelantado con la voz integrada mientras suena la actual */
 export const NEURAL_PREFETCH = 1;
@@ -183,6 +187,8 @@ export function useTTS({
   const [neuralProgress, setNeuralProgress] = useState(0);
   /** la voz del navegador falló: se ofrece descargar la integrada */
   const [offerNeural, setOfferNeural] = useState(false);
+  /** por qué se ofrece: falló el navegador, la voz guardada estaba dañada o falta descargarla */
+  const [offerReason, setOfferReason] = useState<NeuralOfferReason>('browser');
   /** generando el audio de la frase (voz integrada) */
   const [loading, setLoading] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -396,7 +402,16 @@ export function useTTS({
           setLoading(false);
           genRef.current++;
           setStatusBoth('paused');
-          setError(`La voz integrada falló: ${err instanceof Error ? err.message : String(err)}`);
+          const message = err instanceof Error ? err.message : String(err);
+          // modelo dañado (ya borrado) o ausente: se vuelve a ofrecer la descarga, sin error rojo
+          if (message === NEURAL_ERROR.corrupt || message === NEURAL_ERROR.missing) {
+            prefetchRef.current.clear();
+            setNeuralStatus('missing');
+            setOfferReason(message === NEURAL_ERROR.corrupt ? 'corrupt' : 'missing');
+            setOfferNeural(true);
+            return;
+          }
+          setError(`La voz integrada falló: ${message}`);
         });
     },
     [
@@ -449,6 +464,7 @@ export function useTTS({
             speakNeuralRef.current(pos);
           } else {
             setNeuralStatus('missing');
+            setOfferReason('browser');
             setOfferNeural(true);
           }
         })
@@ -759,8 +775,11 @@ export function useTTS({
         return true;
       } catch (err) {
         setNeuralStatus('error');
+        const message = err instanceof Error ? err.message : String(err);
         setError(
-          `No se pudo descargar la voz integrada (${err instanceof Error ? err.message : String(err)}). Revisa tu conexión e inténtalo de nuevo.`,
+          message === NEURAL_ERROR.corrupt
+            ? 'La descarga de la voz quedó incompleta (se borró la copia dañada). Inténtalo de nuevo, mejor con wifi.'
+            : `No se pudo descargar la voz integrada (${message}). Revisa tu conexión e inténtalo de nuevo, mejor con wifi.`,
         );
         return false;
       }
@@ -811,7 +830,12 @@ export function useTTS({
       .then((ready) => {
         if (!alive) return;
         setNeuralStatus(ready ? 'ready' : 'missing');
-        if (ready) void voice.warmup().catch(() => undefined);
+        if (!ready) return;
+        // si al precargar resulta que la copia guardada está dañada, el worker ya la borró
+        voice.warmup().catch((err: unknown) => {
+          if (alive && err instanceof Error && err.message === NEURAL_ERROR.corrupt)
+            setNeuralStatus('missing');
+        });
       })
       .catch(() => undefined);
     return () => {
@@ -860,6 +884,7 @@ export function useTTS({
     setEngine,
     neural: { supported: neuralSupported, status: neuralStatus, progress: neuralProgress },
     offerNeural,
+    offerReason,
     dismissNeuralOffer,
     downloadNeural,
     loading,

@@ -227,3 +227,55 @@ describe('cuando la voz del navegador no funciona', () => {
     expect(result.current.engine).toBe('browser');
   });
 });
+
+describe('voz integrada dañada (descarga cortada con datos móviles)', () => {
+  it('reconoce el error real de ONNX como modelo dañado', async () => {
+    const { looksLikeCorruptModel } = await import('@/lib/tts/neural-protocol');
+    expect(
+      looksLikeCorruptModel(
+        new Error(
+          "Can't create a session. ERROR_CODE: 2, ERROR_MESSAGE: No graph was found in the protobuf.",
+        ),
+      ),
+    ).toBe(true);
+    expect(looksLikeCorruptModel(new Error('Failed to fetch'))).toBe(false);
+  });
+
+  it('al leer con una copia dañada se ofrece descargarla de nuevo, sin error rojo, y luego sigue', async () => {
+    localStorage.setItem(TTS_PREFS_KEY, JSON.stringify({ engine: 'neural' }));
+    const { engine } = fakeNeural(true);
+    engine.synthesize.mockRejectedValueOnce(new Error('VOICE_CORRUPT'));
+    const { result } = setup(engine);
+
+    act(() => result.current.play(0));
+    await flush();
+    expect(result.current.status).toBe('paused');
+    expect(result.current.error).toBeNull();
+    expect(result.current.offerNeural).toBe(true);
+    expect(result.current.offerReason).toBe('corrupt');
+    expect(result.current.neural.status).toBe('missing');
+
+    render(<TTSControls tts={result.current} />);
+    expect(screen.getByText('La voz integrada se descargó incompleta')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Descargar de nuevo y continuar/ })).toBeInTheDocument();
+
+    await act(async () => {
+      await result.current.downloadNeural(true);
+    });
+    await flush();
+    expect(result.current.status).toBe('playing');
+    expect(result.current.offerNeural).toBe(false);
+  });
+
+  it('si la descarga queda incompleta, lo explica y sugiere wifi', async () => {
+    const { engine } = fakeNeural(false);
+    engine.download.mockRejectedValueOnce(new Error('VOICE_CORRUPT'));
+    const { result } = setup(engine);
+    await act(async () => {
+      await result.current.downloadNeural(false);
+    });
+    expect(result.current.neural.status).toBe('error');
+    expect(result.current.error).toContain('incompleta');
+    expect(result.current.error).toContain('wifi');
+  });
+});

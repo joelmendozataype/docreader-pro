@@ -54,6 +54,33 @@ export const ANDROID_CANCEL_DELAY_MS = 250;
 /** si la voz no empieza en este tiempo, se considera que el navegador no la inició */
 export const START_TIMEOUT_MS = 4000;
 
+/** Errores del motor de voz que suelen resolverse sin fijar la voz o el idioma. */
+const RETRYABLE_ERRORS = new Set([
+  'synthesis-failed',
+  'synthesis-unavailable',
+  'voice-unavailable',
+  'language-unavailable',
+  'audio-busy',
+]);
+const MAX_FALLBACK = 2;
+
+/** Mensaje en español para cada error de la Web Speech API. */
+export function speechErrorMessage(code: string): string {
+  switch (code) {
+    case 'not-allowed':
+      return 'El navegador bloqueó el audio. Pulsa reproducir de nuevo.';
+    case 'audio-busy':
+    case 'audio-hardware':
+      return 'Otra app está usando el audio del dispositivo. Ciérrala y pulsa reproducir.';
+    case 'network':
+      return 'La voz elegida necesita internet y no hay conexión. Elige una voz local en ⚙.';
+    case 'text-too-long':
+      return 'El fragmento es demasiado largo para la voz. Prueba con otra voz.';
+    default:
+      return 'El motor de voz del dispositivo no pudo leer este texto. Elige otra voz en ⚙ o revisa Ajustes → Accesibilidad → Texto a voz.';
+  }
+}
+
 /** Mensaje accionable cuando el navegador acepta el texto pero no suena nada. */
 export function voiceNotStartedMessage(voiceCount: number): string {
   if (voiceCount === 0) {
@@ -94,6 +121,8 @@ export function useTTS({
   containerHolder.current = containerRef;
 
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  /** reintentos ante fallos del motor de voz (se mantiene durante la sesión) */
+  const fallbackRef = useRef(0);
   const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const synth = supported ? window.speechSynthesis : null;
@@ -203,8 +232,11 @@ export function useTTS({
 
       const utterance = new SpeechSynthesisUtterance(text);
       const v = voiceRef.current;
-      if (v) utterance.voice = v;
-      utterance.lang = v?.lang ?? 'es-ES';
+      // nivel 0: voz elegida · 1: solo idioma · 2: voz predeterminada del sistema
+      // (en Android, fijar `voice` a veces provoca "synthesis-failed" aunque el idioma funcione)
+      const level = fallbackRef.current;
+      if (v && level === 0) utterance.voice = v;
+      if (level < 2) utterance.lang = v?.lang ?? 'es-ES';
       utterance.rate = prefsRef.current.rate;
 
       let started = false;
@@ -225,11 +257,17 @@ export function useTTS({
       utterance.onerror = (event) => {
         if (gen !== genRef.current) return;
         if (event.error === 'interrupted' || event.error === 'canceled') return;
-        setError(
-          event.error === 'not-allowed'
-            ? 'El navegador bloqueó el audio. Pulsa reproducir de nuevo.'
-            : `La voz falló (${event.error}). Prueba con otra voz.`,
-        );
+        // fallo del motor de voz: se reintenta la misma frase con una configuración más simple
+        if (RETRYABLE_ERRORS.has(event.error) && fallbackRef.current < MAX_FALLBACK) {
+          fallbackRef.current++;
+          const resume = posRef.current; // conserva la última palabra leída
+          speak(
+            { block, chunk, char: resume.block === block && resume.chunk === chunk ? resume.char : char },
+            true,
+          );
+          return;
+        }
+        setError(speechErrorMessage(event.error));
         genRef.current++;
         setStatusBoth('paused');
       };
@@ -388,6 +426,7 @@ export function useTTS({
       setPrefs(next);
       saveTTSPrefs(next);
       voiceRef.current = voicesRef.current.find((v) => v.voiceURI === voiceURI) ?? voiceRef.current;
+      fallbackRef.current = 0; // elección explícita: se vuelve a usar la voz elegida
       restartIfPlaying();
     },
     [restartIfPlaying],

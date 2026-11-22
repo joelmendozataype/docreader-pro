@@ -129,9 +129,52 @@ describe('useTTS', () => {
     expect(result.current.error).toBeNull();
 
     act(() => result.current.play(1));
+    act(() => synth.fail('not-allowed')); // no se reintenta: requiere un nuevo toque del usuario
+    expect(result.current.status).toBe('paused');
+    expect(result.current.error).toContain('bloqueó el audio');
+  });
+
+  it('ante synthesis-failed reintenta sin fijar voz y luego con la voz del sistema', () => {
+    const { result } = setup();
+    act(() => result.current.play(1));
+    const text = synth.last.text;
+    expect(synth.last.voice?.lang).toBe('es-MX');
+
+    act(() => synth.fail('synthesis-failed'));
+    expect(synth.last.text).toBe(text); // misma frase
+    expect(synth.last.voice).toBeNull(); // sin voz fija
+    expect(synth.last.lang).toBe('es-MX'); // pero con el idioma
+    expect(result.current.error).toBeNull();
+    expect(result.current.status).toBe('playing');
+
+    act(() => synth.fail('synthesis-failed'));
+    expect(synth.last.voice).toBeNull();
+    expect(synth.last.lang).toBe(''); // voz predeterminada del sistema
+
+    // el ajuste se mantiene para las frases siguientes
+    act(() => synth.finish());
+    expect(synth.last.lang).toBe('');
+
     act(() => synth.fail('synthesis-failed'));
     expect(result.current.status).toBe('paused');
-    expect(result.current.error).toContain('Prueba con otra voz');
+    expect(result.current.error).toContain('Elige otra voz');
+  });
+
+  it('el reintento retoma desde la última palabra leída', () => {
+    const { result } = setup();
+    act(() => result.current.play(1));
+    act(() => synth.boundary(27, 7)); // "Segunda"
+    act(() => synth.fail('synthesis-failed'));
+    expect(synth.last.text).toBe('Segunda frase del párrafo.');
+  });
+
+  it('elegir una voz a mano vuelve a usarla aunque antes hubiera fallado', () => {
+    const { result } = setup();
+    act(() => result.current.play(1));
+    act(() => synth.fail('synthesis-failed'));
+    expect(synth.last.voice).toBeNull();
+    act(() => result.current.setVoice('Helena|es-ES'));
+    expect(synth.last.voice?.name).toBe('Helena');
   });
 
   it('las voces que llegan tarde (voiceschanged) se cargan', () => {

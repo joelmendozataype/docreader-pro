@@ -134,24 +134,24 @@ describe('useTTS', () => {
     expect(result.current.error).toContain('bloqueó el audio');
   });
 
-  it('ante synthesis-failed reintenta sin fijar voz y luego con la voz del sistema', () => {
+  it('ante synthesis-failed recorre el plan: voz, su idioma, otras variantes de español y el sistema', () => {
     const { result } = setup();
     act(() => result.current.play(1));
     const text = synth.last.text;
     expect(synth.last.voice?.lang).toBe('es-MX');
+    expect(synth.last.lang).toBe('es-MX');
 
-    act(() => synth.fail('synthesis-failed'));
-    expect(synth.last.text).toBe(text); // misma frase
-    expect(synth.last.voice).toBeNull(); // sin voz fija
-    expect(synth.last.lang).toBe('es-MX'); // pero con el idioma
-    expect(result.current.error).toBeNull();
-    expect(result.current.status).toBe('playing');
+    const expected = ['es-MX', 'es-US', 'es-ES', 'es', ''];
+    for (const lang of expected) {
+      act(() => synth.fail('synthesis-failed'));
+      expect(synth.last.text).toBe(text); // siempre la misma frase
+      expect(synth.last.voice).toBeNull(); // ya sin voz fija
+      expect(synth.last.lang).toBe(lang);
+      expect(result.current.error).toBeNull();
+      expect(result.current.status).toBe('playing');
+    }
 
-    act(() => synth.fail('synthesis-failed'));
-    expect(synth.last.voice).toBeNull();
-    expect(synth.last.lang).toBe(''); // voz predeterminada del sistema
-
-    // el ajuste se mantiene para las frases siguientes
+    // la configuración que quedó se mantiene para las frases siguientes
     act(() => synth.finish());
     expect(synth.last.text).toBe('Capítulo dos');
     expect(synth.last.lang).toBe('');
@@ -164,17 +164,35 @@ describe('useTTS', () => {
     expect(result.current.notice?.text).toContain('Se saltó una frase');
   });
 
+  it('si un idioma alternativo funciona, se sigue usando sin más reintentos', () => {
+    const { result } = setup();
+    act(() => result.current.play(1));
+    act(() => synth.fail('synthesis-failed')); // voz es-MX falla
+    act(() => synth.fail('synthesis-failed')); // es-MX sin voz falla
+    expect(synth.last.lang).toBe('es-US');
+    act(() => synth.finish()); // es-US funciona
+    expect(synth.last.text).toBe('Capítulo dos');
+    expect(synth.last.lang).toBe('es-US');
+    expect(result.current.fallbackLevel).toBe(2);
+  });
+
   it('se detiene y avisa solo si fallan varias frases seguidas', () => {
     const { result } = setup();
     act(() => result.current.play(0));
-    act(() => synth.fail('synthesis-failed')); // reintento sin voz fija
-    act(() => synth.fail('synthesis-failed')); // reintento con la voz del sistema
+    for (let i = 0; i < 5; i++) act(() => synth.fail('synthesis-failed')); // agota el plan
     act(() => synth.fail('synthesis-failed')); // se salta «Capítulo uno»
     act(() => synth.fail('synthesis-failed')); // se salta el párrafo
     expect(result.current.status).toBe('playing');
     act(() => synth.fail('synthesis-failed')); // tercera frase seguida: se detiene
     expect(result.current.status).toBe('paused');
     expect(result.current.error).toContain('Elige otra voz');
+  });
+
+  it('una voz de Android con idioma «es_US» se pide como «es-US»', () => {
+    synth.setVoices([voice('español Estados Unidos', 'es_US', false)]);
+    const { result } = setup();
+    act(() => result.current.play(1));
+    expect(synth.last.lang).toBe('es-US');
   });
 
   it('el reintento retoma desde la última palabra leída', () => {

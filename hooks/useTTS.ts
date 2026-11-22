@@ -24,7 +24,7 @@ import {
   WORD_HIGHLIGHT,
 } from '@/lib/tts/highlight';
 import { clampRate, loadTTSPrefs, saveTTSPrefs } from '@/lib/tts/prefs';
-import { pickVoice, sortVoices } from '@/lib/tts/voices';
+import { langCandidates, pickVoice, sortVoices } from '@/lib/tts/voices';
 
 export type TTSStatus = 'idle' | 'playing' | 'paused';
 
@@ -62,7 +62,26 @@ const RETRYABLE_ERRORS = new Set([
   'language-unavailable',
   'audio-busy',
 ]);
-const MAX_FALLBACK = 2;
+export interface SpeechAttempt {
+  /** fijar la voz elegida en el enunciado */
+  voice: boolean;
+  /** idioma BCP 47 a fijar ('' = el predeterminado del sistema) */
+  lang: string;
+}
+
+/**
+ * Configuraciones a probar, en orden, cuando el motor de voz falla. En Android,
+ * fijar la voz o un idioma que el motor no tiene instalado da "synthesis-failed";
+ * pasar a otra variante de español o a la voz del sistema suele funcionar.
+ */
+export function attemptPlan(voice: { lang: string } | null | undefined): SpeechAttempt[] {
+  const langs = langCandidates(voice?.lang);
+  return [
+    ...(voice ? [{ voice: true, lang: langs[0] }] : []),
+    ...langs.map((lang) => ({ voice: false, lang })),
+    { voice: false, lang: '' },
+  ];
+}
 /** tras este número de frases seguidas imposibles de leer, se detiene y se avisa */
 export const MAX_SKIPPED_IN_A_ROW = 3;
 /** pausa entre frases en Android (pedir la siguiente en el mismo evento la hace fallar) */
@@ -246,11 +265,11 @@ export function useTTS({
 
       const utterance = new SpeechSynthesisUtterance(text);
       const v = voiceRef.current;
-      // nivel 0: voz elegida · 1: solo idioma · 2: voz predeterminada del sistema
-      // (en Android, fijar `voice` a veces provoca "synthesis-failed" aunque el idioma funcione)
-      const level = fallbackRef.current;
-      if (v && level === 0) utterance.voice = v;
-      if (level < 2) utterance.lang = v?.lang ?? 'es-ES';
+      // plan de intentos: voz elegida → solo su idioma → otras variantes de español → sistema
+      const plan = attemptPlan(v);
+      const attempt = plan[Math.min(fallbackRef.current, plan.length - 1)];
+      if (v && attempt.voice) utterance.voice = v;
+      if (attempt.lang) utterance.lang = attempt.lang; // siempre normalizado (es_US → es-US)
       utterance.rate = prefsRef.current.rate;
 
       let started = false;
@@ -289,7 +308,7 @@ export function useTTS({
         setErrorLog((log) => [...log.slice(-4), entry]);
         if (RETRYABLE_ERRORS.has(event.error)) {
           // 1) se reintenta la misma frase con una configuración más simple, esperando un poco más cada vez
-          if (fallbackRef.current < MAX_FALLBACK) {
+          if (fallbackRef.current < attemptPlan(voiceRef.current).length - 1) {
             fallbackRef.current++;
             setFallbackLevel(fallbackRef.current);
             const resume = posRef.current; // conserva la última palabra leída

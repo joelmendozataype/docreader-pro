@@ -118,3 +118,22 @@ describe('preferencias', () => {
     expect(loadTTSPrefs()).toEqual({ voiceURI: 'x', rate: 1.25 });
   });
 });
+
+describe('idiomas de Android', () => {
+  it('normalizeLang convierte «es_US» en «es-US» y respeta etiquetas válidas', async () => {
+    const { normalizeLang, langCandidates } = await import('@/lib/tts/voices');
+    expect(normalizeLang('es_US')).toBe('es-US');
+    expect(normalizeLang('es_us')).toBe('es-US');
+    expect(normalizeLang('ES')).toBe('es');
+    expect(normalizeLang('es-419')).toBe('es-419');
+    expect(normalizeLang('')).toBe('');
+    expect(langCandidates('es_US')).toEqual(['es-US', 'es-ES', 'es']);
+    expect(langCandidates(undefined)).toEqual(['es-US', 'es-ES', 'es']);
+  });
+
+  it('las voces de Android con guion bajo se reconocen como español y se muestran bien', () => {
+    const android = voice('español Estados Unidos', 'es_US', false);
+    expect(sortVoices([voice('Zira', 'en-US'), android])[0]).toBe(android);
+    expect(voiceLabel(android)).toBe('español Estados Unidos (es-US)');
+  });
+});

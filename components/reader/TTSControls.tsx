@@ -15,13 +15,21 @@ import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import type { TTSController } from '@/hooks/useTTS';
+import { attemptPlan, type TTSController } from '@/hooks/useTTS';
 import { RATES } from '@/lib/tts/prefs';
 import { isSpanish, voiceLabel } from '@/lib/tts/voices';
 import { cn } from '@/lib/utils';
 
 /** commit publicado (Vercel lo expone en el build); sirve para saber si el celular tiene la última versión */
 const APP_VERSION = process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? 'local';
+
+/** Texto del diagnóstico: qué voz e idioma se están usando (incluidos los reintentos). */
+function describeAttempt(tts: TTSController): string {
+  const plan = attemptPlan(tts.voice);
+  const attempt = plan[Math.min(tts.fallbackLevel, plan.length - 1)];
+  if (attempt.voice && tts.voice) return `${tts.voice.name} · ${attempt.lang}`;
+  return attempt.lang ? `voz del sistema · ${attempt.lang}` : 'voz e idioma del sistema';
+}
 
 const STATUS_TEXT = {
   idle: 'Lectura en voz alta detenida',
@@ -191,13 +199,7 @@ export function TTSControls({ tts, className }: { tts: TTSController; className?
                 {tts.voices.length} ({tts.voices.filter(isSpanish).length} en español)
               </dd>
               <dt>En uso</dt>
-              <dd>
-                {tts.fallbackLevel === 0
-                  ? (tts.voice?.name ?? 'predeterminada del sistema')
-                  : tts.fallbackLevel === 1
-                    ? `solo idioma ${tts.voice?.lang ?? 'es-ES'}`
-                    : 'predeterminada del sistema'}
-              </dd>
+              <dd>{describeAttempt(tts)}</dd>
               <dt>Errores</dt>
               <dd>{tts.errorLog.length ? tts.errorLog.join(' · ') : 'ninguno'}</dd>
             </dl>

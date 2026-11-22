@@ -20,12 +20,19 @@ const ACCEPT = {
 };
 
 /**
- * En varios Android (Samsung, ZTE…) un `accept` con tipos de Word/HTML hace que el
- * navegador muestre solo «Cámara / Fotos y videos» en vez del gestor de archivos.
- * Ahí el selector se abre sin filtro; los archivos de otro tipo igual se rechazan
- * (react-dropzone filtra con ACCEPT y luego se verifica por magic bytes).
+ * Android abre «Cámara / Cámara de video / Fotos y videos» cuando el `accept` está
+ * vacío o trae extensiones que no sabe convertir (.docx, .htm…): lo trata como
+ * «cualquier archivo» y ofrece la cámara. Con solo tipos MIME de documentos (ninguno
+ * de imagen o video) abre directo el gestor de archivos.
+ * `application/octet-stream` cubre los .doc/.docx que algunos gestores guardan sin tipo;
+ * los archivos que no son documentos se siguen rechazando (ACCEPT y magic bytes).
  */
-function useOpenPickerWithoutFilter() {
+export const ANDROID_ACCEPT = [
+  ...Object.keys(ACCEPT),
+  'application/octet-stream',
+].join(',');
+
+function useIsAndroid() {
   const [android, setAndroid] = useState(false);
   useEffect(() => {
     setAndroid(/android/i.test(navigator.userAgent));
@@ -48,7 +55,7 @@ export function Dropzone({
     }
   };
 
-  const noPickerFilter = useOpenPickerWithoutFilter();
+  const android = useIsAndroid();
   const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
     accept: ACCEPT,
     multiple: true,
@@ -70,7 +77,7 @@ export function Dropzone({
       <input
         {...getInputProps({
           'aria-label': 'Elegir documentos para subir',
-          ...(noPickerFilter && { accept: undefined }),
+          ...(android && { accept: ANDROID_ACCEPT }),
         })}
       />
       <UploadCloudIcon
